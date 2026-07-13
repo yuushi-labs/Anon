@@ -42,6 +42,8 @@ export const appUsers = mysqlTable("app_users", {
   publicKey: varchar("publicKey", { length: 1024 }).notNull().unique(),
   /** User's icon URL or color */
   iconUrl: varchar("iconUrl", { length: 512 }),
+  /** FCM token for push notifications */
+  fcmToken: varchar("fcmToken", { length: 512 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

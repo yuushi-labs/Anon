@@ -1,0 +1,1 @@
+ALTER TABLE `app_users` ADD `fcmToken` varchar(512);

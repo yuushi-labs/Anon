@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "421a96a8-4d7a-44bd-859d-abac1e3fa617",
-  "prevId": "9ab615be-3bcd-4cb8-8657-4bdc4b29143e",
+  "id": "c4bb5517-db5f-4294-9aa8-8ef30e89d4a1",
+  "prevId": "421a96a8-4d7a-44bd-859d-abac1e3fa617",
   "tables": {
     "app_users": {
       "name": "app_users",
@@ -37,6 +37,13 @@
         },
         "iconUrl": {
           "name": "iconUrl",
+          "type": "varchar(512)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "fcmToken": {
+          "name": "fcmToken",
           "type": "varchar(512)",
           "primaryKey": false,
           "notNull": false,

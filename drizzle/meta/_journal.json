@@ -9,12 +9,18 @@
       "tag": "0000_elite_eternals",
       "breakpoints": true
     },
-
     {
       "idx": 1,
       "version": "5",
       "when": 1783858530232,
       "tag": "0002_military_xavin",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1783933247913,
+      "tag": "0002_closed_may_parker",
       "breakpoints": true
     }
   ]

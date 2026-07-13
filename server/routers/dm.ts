@@ -417,4 +417,36 @@ export const dmRouter = router({
         });
       }
     }),
+
+  registerFCMToken: publicProcedure
+    .input(
+      z.object({
+        userId: z.number(),
+        fcmToken: z.string().min(1).max(512),
+      })
+    )
+    .mutation(async ({ input }) => {
+      try {
+        const database = await getDb();
+        if (!database) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Database not available",
+          });
+        }
+
+        await database
+          .update(appUsers)
+          .set({ fcmToken: input.fcmToken })
+          .where(eq(appUsers.id, input.userId));
+
+        return { success: true, message: "FCM token registered successfully" };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to register FCM token",
+        });
+      }
+    }),
 });

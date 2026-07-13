@@ -227,16 +227,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const registerFCMToken = useCallback(async () => {
     try {
       const fcmToken = await initializeNotifications();
-      if (fcmToken) {
+      if (fcmToken && state.user) {
         console.log("FCM Token obtained:", fcmToken);
         // Store FCM token locally
         await SecureStore.setItemAsync("fcm_token", fcmToken);
-        // TODO: Send FCM token to backend for push notifications
+        // Send FCM token to backend
+        try {
+          const registerFCMMutation = trpc.dm.registerFCMToken.useMutation();
+          await registerFCMMutation.mutateAsync({
+            userId: state.user.id,
+            fcmToken,
+          });
+          console.log("FCM token registered with backend");
+        } catch (backendError) {
+          console.error("Failed to register FCM token with backend:", backendError);
+        }
       }
     } catch (error) {
       console.error("Failed to register FCM token:", error);
     }
-  }, []);
+  }, [state.user]);
 
   const logout = useCallback(async () => {
     try {
