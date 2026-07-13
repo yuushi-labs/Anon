@@ -91,7 +91,7 @@ pnpm install --frozen-lockfile
 
 プロジェクトルートに`.env.local`ファイルを作成し、必要な環境変数を設定してください。`.env.example`を参考にしてください。
 
-現在のサーバー起動スクリプトは`.env.local`ファイルを自動的に読み込みません。開発時には、利用する開発環境の安全な環境変数管理機能から渡すか、シェルで`export`コマンドを使って設定してください。
+**サーバー起動スクリプトは`.env.local`ファイルを自動的に読み込みます。** ただし、`EXPO_PUBLIC_`で始まるクライアント側の環境変数は、Expoのビルドプロセスによって処理されるため、`.env.local`に記述するだけでなく、`app.json`や`eas.json`で設定するか、`expo start`コマンド実行時に直接渡す必要があります。
 
 ```bash
 export DATABASE_URL='mysql://app_user:password@127.0.0.1:3306/anon'
@@ -156,6 +156,45 @@ pnpm ios
 実機やエミュレーターから接続する場合、`localhost`は端末自身を指すことがあります。開発PCのLANアドレス、Androidエミュレーター向けホストアドレス、またはHTTPSで公開された開発URLを使ってAPI接続先を設定してください。現状のチャット画面にはSocket.IO接続先のハードコードが残っているため、ネイティブ検証前に[`todo.md`](todo.md)の接続先修正が必要です。
 
 ## 開発コマンド
+
+### Android APKの作成方法
+
+ExpoプロジェクトでAndroid APKを作成する最も推奨される方法は、**EAS Build** を利用することです。EAS Buildは、クラウド上でアプリのバイナリをビルドし、Google Play Storeへの提出準備ができた状態のAPKやAAB (Android App Bundle) を生成します。
+
+1.  **EAS CLIのインストール**
+    ```bash
+    pnpm add -g eas-cli
+    ```
+2.  **Expoアカウントへのログイン**
+    ```bash
+    eas login
+    ```
+3.  **EAS Buildの設定**
+    プロジェクトのルートで以下のコマンドを実行し、`eas.json`ファイルを生成・設定します。
+    ```bash
+    eas build:configure
+    ```
+    指示に従って設定を進めてください。
+4.  **ビルドの実行**
+    APKをビルドするには、以下のコマンドを実行します。
+    ```bash
+    eas build --platform android --profile production
+    ```
+    ビルドが完了すると、ExpoのダッシュボードからAPKファイルをダウンロードできます。
+
+#### ローカルでのAPKビルド (Bare Workflow)
+
+EAS Buildを使用せず、ローカル環境でAPKをビルドすることも可能です。この方法は、ネイティブコードのカスタマイズが必要な場合や、特定のビルド環境を制御したい場合に適しています。
+
+1.  **ネイティブプロジェクトファイルの生成**
+    ```bash
+    pnpm expo prebuild
+    ```
+    これにより、`android/`ディレクトリが生成されます。
+2.  **Android Studioでのビルド**
+    生成された`android/`ディレクトリをAndroid Studioで開き、通常のAndroidプロジェクトとしてビルドします。`Build` > `Build Bundle(s) / APK(s)` > `Build APK(s)`を選択してください。
+
+---
 
 | コマンド          | 内容                                    |
 | ----------------- | --------------------------------------- |
