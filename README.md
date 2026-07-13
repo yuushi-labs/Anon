@@ -89,7 +89,9 @@ pnpm install --frozen-lockfile
 
 ### 3. 環境変数を設定する
 
-最低限、MySQL接続文字列とJWT秘密鍵を設定してください。現在のサーバー起動スクリプトは環境変数ファイルを明示的に読み込まないため、実行するシェルで`export`するか、利用する開発環境の安全な環境変数管理機能から渡してください。
+プロジェクトルートに`.env.local`ファイルを作成し、必要な環境変数を設定してください。`.env.example`を参考にしてください。
+
+現在のサーバー起動スクリプトは`.env.local`ファイルを自動的に読み込みません。開発時には、利用する開発環境の安全な環境変数管理機能から渡すか、シェルで`export`コマンドを使って設定してください。
 
 ```bash
 export DATABASE_URL='mysql://app_user:password@127.0.0.1:3306/anon'
@@ -100,15 +102,20 @@ export PORT='3000'
 
 | 変数                       |                 必須度 | 用途                                                            |
 | -------------------------- | ---------------------: | --------------------------------------------------------------- |
+| 変数                       |                 必須度 | 用途                                                            |
+|---|---:|---|
 | `DATABASE_URL`             |                   必須 | MySQLの接続文字列。DrizzleコマンドとAPIサーバーが使用           |
 | `JWT_SECRET`               |                   必須 | JWT署名・Cookie関連の秘密値。本番では十分に長いランダム値を使用 |
-| `EXPO_PUBLIC_API_BASE_URL` |                   推奨 | クライアントから接続するAPIベースURL                            |
-| `PORT`                     |                   任意 | APIサーバーの希望ポート。既定値は`3000`                         |
-| `NODE_ENV`                 |                   任意 | `development`または`production`                                 |
-| `OAUTH_SERVER_URL`         | テンプレート機能使用時 | 既存OAuth機能のサーバーURL                                      |
-| `OWNER_OPEN_ID`            | テンプレート機能使用時 | 既存OAuth機能の所有者ID                                         |
-| `BUILT_IN_FORGE_API_URL`   | テンプレート機能使用時 | 組み込み外部機能のAPI URL                                       |
-| `BUILT_IN_FORGE_API_KEY`   | テンプレート機能使用時 | 組み込み外部機能のAPIキー                                       |
+| `EXPO_PUBLIC_API_BASE_URL` |                   推奨 | クライアントから接続するAPIサーバーのベースURL。例: `http://localhost:3000` |
+| `PORT`                     |                   任意 | APIサーバーの希望ポート。指定しない場合、デフォルトは`3000`。 |
+| `NODE_ENV`                 |                   任意 | `development`または`production`。 |
+| `EXPO_PUBLIC_OAUTH_PORTAL_URL` | テンプレート機能使用時 | 既存OAuth機能のポータルURL。 |
+| `EXPO_PUBLIC_OAUTH_SERVER_URL` | テンプレート機能使用時 | 既存OAuth機能のサーバーURL。 |
+| `EXPO_PUBLIC_APP_ID`       | テンプレート機能使用時 | アプリケーションID。 |
+| `EXPO_PUBLIC_OWNER_OPEN_ID`| テンプレート機能使用時 | オーナーのOpen ID。 |
+| `EXPO_PUBLIC_OWNER_NAME`   | テンプレート機能使用時 | オーナー名。 |
+| `BUILT_IN_FORGE_API_URL`   | テンプレート機能使用時 | 組み込み外部機能のAPI URL。 |
+| `BUILT_IN_FORGE_API_KEY`   | テンプレート機能使用時 | 組み込み外部機能のAPIキー。 |
 
 `EXPO_PUBLIC_`で始まる変数はクライアントバンドルから参照可能です。秘密鍵、DBパスワード、JWT秘密鍵などの機密情報には使用しないでください。
 
