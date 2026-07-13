@@ -1,45 +1,128 @@
 import { ScrollView, Text, View, TouchableOpacity } from "react-native";
-
+import { useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
+import { useAuth } from "@/lib/auth-context";
 
-/**
- * Home Screen - NativeWind Example
- *
- * This template uses NativeWind (Tailwind CSS for React Native).
- * You can use familiar Tailwind classes directly in className props.
- *
- * Key patterns:
- * - Use `className` instead of `style` for most styling
- * - Theme colors: use tokens directly (bg-background, text-foreground, bg-primary, etc.); no dark: prefix needed
- * - Responsive: standard Tailwind breakpoints work on web
- * - Custom colors defined in tailwind.config.js
- */
 export default function HomeScreen() {
+  const router = useRouter();
+  const { state: authState } = useAuth();
+
+  const handleNavigateToDMList = () => {
+    router.push({
+      pathname: "/(tabs)",
+      params: { screen: "dm-list" },
+    });
+  };
+
+  const handleNavigateToProfile = () => {
+    router.push({
+      pathname: "/(tabs)",
+      params: { screen: "profile" },
+    });
+  };
+
   return (
-    <ScreenContainer className="p-6">
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
-        <View className="flex-1 gap-8">
+    <ScreenContainer className="bg-background">
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+        <View className="flex-1 gap-8 px-6 py-8">
           {/* Hero Section */}
-          <View className="items-center gap-2">
-            <Text className="text-4xl font-bold text-foreground">Welcome</Text>
+          <View className="items-center gap-3 mt-8">
+            <Text className="text-5xl font-bold text-foreground">匿名DM</Text>
             <Text className="text-base text-muted text-center">
-              Edit app/(tabs)/index.tsx to get started
+              安全で匿名のメッセージング
             </Text>
           </View>
 
-          {/* Example Card */}
-          <View className="w-full max-w-sm self-center bg-surface rounded-2xl p-6 shadow-sm border border-border">
-            <Text className="text-lg font-semibold text-foreground mb-2">NativeWind Ready</Text>
-            <Text className="text-sm text-muted leading-relaxed">
-              Use Tailwind CSS classes directly in your React Native components.
+          {/* User Info Card */}
+          {authState.isSignedIn && authState.user && (
+            <View className="bg-surface rounded-2xl p-6 border border-border">
+              <Text className="text-sm font-semibold text-muted mb-2">
+                ログイン中のユーザー
+              </Text>
+              <Text className="text-2xl font-bold text-foreground mb-1">
+                {authState.user.username}
+              </Text>
+              <Text className="text-sm text-muted">
+                ID: {authState.user.publicId}
+              </Text>
+            </View>
+          )}
+
+          {/* Features */}
+          <View className="gap-3">
+            <Text className="text-lg font-semibold text-foreground mb-2">
+              特徴
             </Text>
+
+            <View className="bg-surface rounded-lg p-4 border border-border">
+              <Text className="text-sm font-semibold text-foreground mb-1">
+                🔐 エンドツーエンド暗号化
+              </Text>
+              <Text className="text-xs text-muted">
+                すべてのメッセージは暗号化されます
+              </Text>
+            </View>
+
+            <View className="bg-surface rounded-lg p-4 border border-border">
+              <Text className="text-sm font-semibold text-foreground mb-1">
+                👤 完全な匿名性
+              </Text>
+              <Text className="text-xs text-muted">
+                あなたのプロフィール情報は相手に表示されません
+              </Text>
+            </View>
+
+            <View className="bg-surface rounded-lg p-4 border border-border">
+              <Text className="text-sm font-semibold text-foreground mb-1">
+                ⚡ リアルタイム通信
+              </Text>
+              <Text className="text-xs text-muted">
+                WebSocketによる即座のメッセージ配信
+              </Text>
+            </View>
+
+            <View className="bg-surface rounded-lg p-4 border border-border">
+              <Text className="text-sm font-semibold text-foreground mb-1">
+                🛡️ ブロック・通報機能
+              </Text>
+              <Text className="text-xs text-muted">
+                不適切なユーザーをブロックまたは通報できます
+              </Text>
+            </View>
           </View>
 
-          {/* Example Button */}
-          <View className="items-center">
-            <TouchableOpacity className="bg-primary px-6 py-3 rounded-full active:opacity-80">
-              <Text className="text-background font-semibold">Get Started</Text>
+          {/* Action Buttons */}
+          <View className="gap-3 mt-4">
+            <TouchableOpacity
+              onPress={handleNavigateToDMList}
+              className="bg-primary rounded-lg py-4 items-center justify-center"
+            >
+              <Text className="text-white font-semibold text-base">
+                DM を確認
+              </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleNavigateToProfile}
+              className="bg-surface border border-border rounded-lg py-4 items-center justify-center"
+            >
+              <Text className="text-foreground font-semibold text-base">
+                プロフィール
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Info Box */}
+          <View className="bg-primary/10 border border-primary rounded-lg p-4 mt-4">
+            <Text className="text-xs text-primary font-semibold mb-1">
+              ℹ️ 使い方
+            </Text>
+            <Text className="text-xs text-primary/80 leading-relaxed">
+              1. 公開IDを他のユーザーに共有{"\n"}
+              2. 相手のIDを入力してDMを開始{"\n"}
+              3. リアルタイムでメッセージ送受信{"\n"}
+              4. 不適切なユーザーはブロック・通報
+            </Text>
           </View>
         </View>
       </ScrollView>
