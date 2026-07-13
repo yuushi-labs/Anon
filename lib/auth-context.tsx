@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useReducer, useCallback, ReactNode } from "react";
 import * as CryptoLib from "./crypto";
 import { trpc } from "./trpc";
+import { initializeNotifications, subscribeToNotifications } from "./notifications";
+import * as SecureStore from "expo-secure-store";
+import { useRouter } from "expo-router";
 
 export interface User {
   id: number;
@@ -73,8 +76,42 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, initialState);
+  const router = useRouter();
   const registerMutation = trpc.dm.register.useMutation();
   const loginMutation = trpc.auth.login.useMutation();
+
+  // Initialize notifications and subscribe to events
+  React.useEffect(() => {
+    const setupNotifications = async () => {
+      try {
+        await initializeNotifications();
+      } catch (error) {
+        console.error("Failed to initialize notifications:", error);
+      }
+    };
+
+    setupNotifications();
+
+    const unsubscribe = subscribeToNotifications(
+      (notification) => {
+        console.log("Notification received:", notification);
+      },
+      (response) => {
+        const data = response.notification.request.content.data;
+        console.log("Notification tapped:", data);
+
+        // Navigate to chat if conversationId is provided
+        if (data.conversationId) {
+          router.push({
+            pathname: "/(tabs)",
+            params: { screen: "chat", conversationId: String(data.conversationId) },
+          });
+        }
+      }
+    );
+
+    return unsubscribe;
+  }, [router]);
 
   // Initialize auth state on mount
   React.useEffect(() => {
@@ -123,6 +160,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           iconUrl,
         });
 
+        // Register FCM token
+        await registerFCMToken();
+
         // Auto login after registration
         await login(publicId);
       } catch (error) {
@@ -163,6 +203,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           signature,
         });
 
+        // Register FCM token
+        await registerFCMToken();
+
         dispatch({
           type: "SET_SIGNED_IN",
           payload: {
@@ -181,10 +224,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [loginMutation]
   );
 
+  const registerFCMToken = useCallback(async () => {
+    try {
+      const fcmToken = await initializeNotifications();
+      if (fcmToken) {
+        console.log("FCM Token obtained:", fcmToken);
+        // Store FCM token locally
+        await SecureStore.setItemAsync("fcm_token", fcmToken);
+        // TODO: Send FCM token to backend for push notifications
+      }
+    } catch (error) {
+      console.error("Failed to register FCM token:", error);
+    }
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       dispatch({ type: "SET_LOADING", payload: true });
       await CryptoLib.deleteKeys();
+      await SecureStore.deleteItemAsync("fcm_token");
       dispatch({ type: "SET_SIGNED_OUT" });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Logout failed";
