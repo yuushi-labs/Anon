@@ -13,6 +13,8 @@ import {
 } from "./notifications";
 import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
+import { disconnectWebSocket } from "./websocket";
+import { useQueryClient } from "@tanstack/react-query";
 
 export interface User {
   id: number;
@@ -90,6 +92,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, initialState);
   const router = useRouter();
+  const queryClient = useQueryClient();
   const registerMutation = trpc.dm.register.useMutation();
   const loginMutation = trpc.auth.login.useMutation();
   const registerFCMMutation = trpc.dm.registerFCMToken.useMutation();
@@ -271,8 +274,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     try {
       dispatch({ type: "SET_LOADING", payload: true });
+
+      // 1. Disconnect WebSocket
+      disconnectWebSocket();
+
+      // 2. Clear React Query cache
+      // We use resetQueries to clear all data and refetch if needed, 
+      // or clear() to completely wipe the cache. 
+      // For logout, clear() or removing auth-dependent queries is safer.
+      queryClient.clear();
+
+      // 3. Delete local authentication data
       await CryptoLib.deleteKeys();
       await SecureStore.deleteItemAsync("fcm_token");
+
       dispatch({ type: "SET_SIGNED_OUT" });
     } catch (error) {
       const errorMessage =
@@ -282,7 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       dispatch({ type: "SET_LOADING", payload: false });
     }
-  }, []);
+  }, [queryClient]);
 
   const clearError = useCallback(() => {
     dispatch({ type: "CLEAR_ERROR" });
