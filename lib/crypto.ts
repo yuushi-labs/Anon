@@ -1,179 +1,177 @@
 import * as SecureStore from "expo-secure-store";
-import * as Crypto from "expo-crypto";
 
 /**
- * Cryptographic utilities for client-side key management
- * Uses Expo SecureStore for secure key storage
+ * Cryptographic utilities for client-side key management.
+ * Keys are generated with P-256 ECDSA and persisted through Expo SecureStore.
  */
 
 const PRIVATE_KEY_STORAGE_KEY = "dm_app_private_key";
 const PUBLIC_KEY_STORAGE_KEY = "dm_app_public_key";
 const PUBLIC_ID_STORAGE_KEY = "dm_app_public_id";
 
+function getSubtleCrypto(): SubtleCrypto {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new Error("Web Crypto API is not available on this runtime");
+  }
+  return subtle;
+}
+
+function bytesToBase64(bytes: ArrayBuffer): string {
+  const binary = Array.from(new Uint8Array(bytes), (byte) =>
+    String.fromCharCode(byte),
+  ).join("");
+  return globalThis.btoa(binary);
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = globalThis.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function pemEncode(label: string, bytes: ArrayBuffer): string {
+  const base64 = bytesToBase64(bytes);
+  const lines = base64.match(/.{1,64}/g)?.join("\n") ?? base64;
+  return `-----BEGIN ${label}-----\n${lines}\n-----END ${label}-----`;
+}
+
+function pemDecode(pem: string): ArrayBuffer {
+  const base64 = pem
+    .replace(/-----BEGIN [^-]+-----/g, "")
+    .replace(/-----END [^-]+-----/g, "")
+    .replace(/\s/g, "");
+  const bytes = base64ToBytes(base64);
+  return bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+}
+
+function trimLeadingZeroes(bytes: Uint8Array): Uint8Array {
+  let offset = 0;
+  while (offset < bytes.length - 1 && bytes[offset] === 0) offset += 1;
+  return bytes.slice(offset);
+}
+
+function encodeDerInteger(bytes: Uint8Array): Uint8Array {
+  const trimmed = trimLeadingZeroes(bytes);
+  const needsPadding = (trimmed[0] & 0x80) !== 0;
+  const value = needsPadding
+    ? new Uint8Array([0, ...Array.from(trimmed)])
+    : trimmed;
+  return new Uint8Array([0x02, value.length, ...Array.from(value)]);
+}
+
+function webCryptoEcdsaSignatureToDer(signature: ArrayBuffer): Uint8Array {
+  const raw = new Uint8Array(signature);
+  if (raw.length !== 64) {
+    throw new Error("Unexpected P-256 ECDSA signature length");
+  }
+  const r = encodeDerInteger(raw.slice(0, 32));
+  const s = encodeDerInteger(raw.slice(32));
+  const body = new Uint8Array([...Array.from(r), ...Array.from(s)]);
+  return new Uint8Array([0x30, body.length, ...Array.from(body)]);
+}
+
+async function importPrivateKey(privateKeyPem: string): Promise<CryptoKey> {
+  return getSubtleCrypto().importKey(
+    "pkcs8",
+    pemDecode(privateKeyPem),
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["sign"],
+  );
+}
+
 /**
- * Generate ECDSA key pair using Web Crypto API
- * Note: Expo doesn't have native ECDSA support, so we use a simplified approach
- * In production, consider using a library like TweetNaCl.js
+ * Generate a P-256 ECDSA key pair compatible with the Node.js server verifier.
  */
 export async function generateKeyPair(): Promise<{
   publicKey: string;
   privateKey: string;
 }> {
-  try {
-    // Generate a random key pair (simplified - in production use proper ECDSA)
-    const randomBytes = await Crypto.getRandomBytes(32);
-    const randomHex = Array.from(randomBytes as Uint8Array)
-      .map((b: number) => b.toString(16).padStart(2, "0"))
-      .join("");
+  const keyPair = await getSubtleCrypto().generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign", "verify"],
+  );
 
-    // For now, use a simplified key format
-    // In production, implement proper ECDSA using a library
-    const publicKey = `-----BEGIN PUBLIC KEY-----\n${randomHex.substring(0, 64)}\n-----END PUBLIC KEY-----`;
-    const privateKey = `-----BEGIN PRIVATE KEY-----\n${randomHex}\n-----END PRIVATE KEY-----`;
+  const publicKeyBytes = await getSubtleCrypto().exportKey(
+    "spki",
+    keyPair.publicKey,
+  );
+  const privateKeyBytes = await getSubtleCrypto().exportKey(
+    "pkcs8",
+    keyPair.privateKey,
+  );
 
-    return { publicKey, privateKey };
-  } catch (error) {
-    console.error("Failed to generate key pair:", error);
-    throw error;
-  }
+  return {
+    publicKey: pemEncode("PUBLIC KEY", publicKeyBytes),
+    privateKey: pemEncode("PRIVATE KEY", privateKeyBytes),
+  };
 }
 
-/**
- * Save private key to secure storage
- */
 export async function savePrivateKey(privateKey: string): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(PRIVATE_KEY_STORAGE_KEY, privateKey);
-  } catch (error) {
-    console.error("Failed to save private key:", error);
-    throw error;
-  }
+  await SecureStore.setItemAsync(PRIVATE_KEY_STORAGE_KEY, privateKey);
 }
 
-/**
- * Save public key to local storage
- */
 export async function savePublicKey(publicKey: string): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(PUBLIC_KEY_STORAGE_KEY, publicKey);
-  } catch (error) {
-    console.error("Failed to save public key:", error);
-    throw error;
-  }
+  await SecureStore.setItemAsync(PUBLIC_KEY_STORAGE_KEY, publicKey);
 }
 
-/**
- * Get private key from secure storage
- */
 export async function getPrivateKey(): Promise<string | null> {
-  try {
-    return await SecureStore.getItemAsync(PRIVATE_KEY_STORAGE_KEY);
-  } catch (error) {
-    console.error("Failed to retrieve private key:", error);
-    return null;
-  }
+  return SecureStore.getItemAsync(PRIVATE_KEY_STORAGE_KEY);
 }
 
-/**
- * Get public key from local storage
- */
 export async function getPublicKey(): Promise<string | null> {
-  try {
-    return await SecureStore.getItemAsync(PUBLIC_KEY_STORAGE_KEY);
-  } catch (error) {
-    console.error("Failed to retrieve public key:", error);
-    return null;
-  }
+  return SecureStore.getItemAsync(PUBLIC_KEY_STORAGE_KEY);
 }
 
-/**
- * Check if keys exist
- */
 export async function keysExist(): Promise<boolean> {
-  try {
-    const privateKey = await getPrivateKey();
-    const publicKey = await getPublicKey();
-    return !!privateKey && !!publicKey;
-  } catch (error) {
-    console.error("Failed to check keys:", error);
-    return false;
-  }
+  const privateKey = await getPrivateKey();
+  const publicKey = await getPublicKey();
+  return !!privateKey && !!publicKey;
 }
 
-/**
- * Delete all keys (for logout)
- */
 export async function deleteKeys(): Promise<void> {
-  try {
-    await SecureStore.deleteItemAsync(PRIVATE_KEY_STORAGE_KEY);
-    await SecureStore.deleteItemAsync(PUBLIC_KEY_STORAGE_KEY);
-    await SecureStore.deleteItemAsync(PUBLIC_ID_STORAGE_KEY);
-  } catch (error) {
-    console.error("Failed to delete keys:", error);
-    throw error;
-  }
+  await SecureStore.deleteItemAsync(PRIVATE_KEY_STORAGE_KEY);
+  await SecureStore.deleteItemAsync(PUBLIC_KEY_STORAGE_KEY);
+  await SecureStore.deleteItemAsync(PUBLIC_ID_STORAGE_KEY);
 }
 
-/**
- * Save public ID
- */
 export async function savePublicId(publicId: string): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(PUBLIC_ID_STORAGE_KEY, publicId);
-  } catch (error) {
-    console.error("Failed to save public ID:", error);
-    throw error;
-  }
+  await SecureStore.setItemAsync(PUBLIC_ID_STORAGE_KEY, publicId);
 }
 
-/**
- * Get public ID
- */
 export async function getPublicId(): Promise<string | null> {
-  try {
-    return await SecureStore.getItemAsync(PUBLIC_ID_STORAGE_KEY);
-  } catch (error) {
-    console.error("Failed to retrieve public ID:", error);
-    return null;
-  }
+  return SecureStore.getItemAsync(PUBLIC_ID_STORAGE_KEY);
 }
 
-/**
- * Sign a message with private key
- * Note: This is a placeholder - implement proper ECDSA signing
- */
 export async function signMessage(message: string): Promise<string> {
-  try {
-    const privateKey = await getPrivateKey();
-    if (!privateKey) {
-      throw new Error("Private key not found");
-    }
-
-    // Placeholder signature - in production, use proper ECDSA
-    const digest = await Crypto.digestStringAsync(
-      Crypto.CryptoDigestAlgorithm.SHA256,
-      message
-    );
-
-    return digest;
-  } catch (error) {
-    console.error("Failed to sign message:", error);
-    throw error;
+  const privateKeyPem = await getPrivateKey();
+  if (!privateKeyPem) {
+    throw new Error("Private key not found");
   }
+
+  const privateKey = await importPrivateKey(privateKeyPem);
+  const signature = await getSubtleCrypto().sign(
+    { name: "ECDSA", hash: "SHA-256" },
+    privateKey,
+    new TextEncoder().encode(message),
+  );
+
+  return Array.from(webCryptoEcdsaSignatureToDer(signature), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
-/**
- * Create a signature for API requests
- */
 export async function createRequestSignature(
   payload: string,
-  timestamp: number
+  timestamp: number,
 ): Promise<string> {
-  try {
-    const message = `${payload}:${timestamp}`;
-    return await signMessage(message);
-  } catch (error) {
-    console.error("Failed to create request signature:", error);
-    throw error;
-  }
+  return signMessage(`${payload}:${timestamp}`);
 }
