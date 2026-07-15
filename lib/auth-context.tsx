@@ -133,30 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, [router]);
 
-  // Initialize auth state on mount
-  React.useEffect(() => {
-    const initializeAuth = async () => {
-      try {
-        const keysExist = await CryptoLib.keysExist();
-        if (keysExist) {
-          const publicId = await CryptoLib.getPublicId();
-          if (publicId) {
-            // Try to restore session
-            dispatch({ type: "SET_LOADING", payload: false });
-          } else {
-            dispatch({ type: "SET_LOADING", payload: false });
-          }
-        } else {
-          dispatch({ type: "SET_LOADING", payload: false });
-        }
-      } catch (error) {
-        console.error("Failed to initialize auth:", error);
-        dispatch({ type: "SET_LOADING", payload: false });
-      }
-    };
-
-    initializeAuth();
-  }, []);
+  // Initialize auth state on mount is moved below login definition
 
   const registerFCMToken = useCallback(async () => {
     try {
@@ -229,8 +206,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "SET_LOADING", payload: false });
       }
     },
-    [loginMutation, registerFCMToken],
+    [loginMutation, registerFCMToken, dispatch],
   );
+
+  // Initialize auth state on mount
+  React.useEffect(() => {
+    const initializeAuth = async () => {
+      try {
+        const keysExist = await CryptoLib.keysExist();
+        if (keysExist) {
+          const publicId = await CryptoLib.getPublicId();
+          if (publicId) {
+            // Try to restore session
+            await login(publicId);
+            // dispatch({ type: "SET_LOADING", payload: false }); // login function already handles setting loading state
+          } else {
+            dispatch({ type: "SET_LOADING", payload: false });
+          }
+        } else {
+          dispatch({ type: "SET_LOADING", payload: false });
+        }
+      } catch (error) {
+        console.error("Failed to initialize auth:", error);
+        dispatch({ type: "SET_LOADING", payload: false });
+      }
+    };
+
+    initializeAuth();
+  }, [login]);
 
   const register = useCallback(
     async (username: string, publicId: string, iconUrl?: string) => {
@@ -262,13 +265,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Registration failed";
+        // Rollback local keys if registration failed after saving them
+        await CryptoLib.deleteKeys();
         dispatch({ type: "SET_ERROR", payload: errorMessage });
         throw error;
       } finally {
         dispatch({ type: "SET_LOADING", payload: false });
       }
     },
-    [registerFCMToken, login, registerMutation],
+    [registerFCMToken, login, registerMutation, dispatch],
   );
 
   const logout = useCallback(async () => {
