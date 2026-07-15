@@ -15,6 +15,7 @@ import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import { disconnectWebSocket } from "./websocket";
 import { useQueryClient } from "@tanstack/react-query";
+import { setSessionToken, removeSessionToken } from "./_core/auth";
 
 export interface User {
   id: number;
@@ -187,8 +188,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           signature,
         });
 
-        // Register FCM token
-        await registerFCMToken();
+        // Persist token for tRPC and other requests
+        await setSessionToken(result.token);
 
         dispatch({
           type: "SET_SIGNED_IN",
@@ -197,6 +198,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             token: result.token,
           },
         });
+
+        // Register FCM token AFTER user state is set
+        await registerFCMToken();
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Login failed";
@@ -292,6 +296,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // 3. Delete local authentication data
       await CryptoLib.deleteKeys();
       await SecureStore.deleteItemAsync("fcm_token");
+      await removeSessionToken();
 
       dispatch({ type: "SET_SIGNED_OUT" });
     } catch (error) {
