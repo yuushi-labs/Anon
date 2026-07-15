@@ -10,6 +10,7 @@ import {
 import { eq, and, or } from "drizzle-orm";
 import { verifyRequestSignature } from "./crypto";
 import { verifyAppToken } from "./app-jwt";
+import { logger } from "./logger";
 
 /**
  * WebSocket server for real-time messaging
@@ -72,12 +73,20 @@ export function initializeWebSocket(httpServer: HTTPServer) {
       const token = socket.handshake.auth.token;
 
       if (!token) {
+        logger.warn("WebSocket auth failed: No token provided", {
+          socketId: socket.id,
+          ip: socket.handshake.address,
+        });
         return next(new Error("Authentication required"));
       }
 
       const payload = await verifyAppToken(token);
       const db = await getDb();
       if (!db) {
+        logger.error("WebSocket auth failed: Database unavailable", {
+          socketId: socket.id,
+          userId: payload.userId,
+        });
         return next(new Error("Database unavailable"));
       }
 
@@ -88,14 +97,21 @@ export function initializeWebSocket(httpServer: HTTPServer) {
         .limit(1);
 
       if (user.length === 0) {
+        logger.warn("WebSocket auth failed: User not found", {
+          socketId: socket.id,
+          userId: payload.userId,
+        });
         return next(new Error("User not found"));
       }
 
       socket.userId = user[0].id;
       socket.publicId = user[0].publicId;
       next();
-    } catch (error) {
-      console.error("WebSocket auth error:", error);
+    } catch (error: any) {
+      logger.error("WebSocket auth error", {
+        socketId: socket.id,
+        error: error.message,
+      });
       next(new Error("Authentication failed"));
     }
   });
@@ -104,7 +120,11 @@ export function initializeWebSocket(httpServer: HTTPServer) {
    * Connection handler
    */
   io.on("connection", (socket: AuthenticatedSocket & any) => {
-    console.log(`User ${socket.publicId} connected: ${socket.id}`);
+    logger.info("WebSocket connected", {
+      socketId: socket.id,
+      userId: socket.userId,
+      publicId: socket.publicId,
+    });
 
     // Track user connection
     if (socket.userId) {
@@ -119,18 +139,20 @@ export function initializeWebSocket(httpServer: HTTPServer) {
      */
     (socket as any).on("join_conversation", async (conversationId: number) => {
       if (!(await isConversationParticipant(conversationId, socket.userId))) {
-        socket.emit("error", {
-          message: "Not authorized for this conversation",
-        });
-        console.warn("WebSocket join denied", {
+        logger.warn("WebSocket join denied: Not a participant", {
+          socketId: socket.id,
           userId: socket.userId,
           conversationId,
+        });
+        socket.emit("error", {
+          message: "Not authorized for this conversation",
         });
         return;
       }
       const room = `conversation:${conversationId}`;
       socket.join(room);
-      console.log("WebSocket room joined", {
+      logger.info("WebSocket room joined", {
+        socketId: socket.id,
         userId: socket.userId,
         conversationId,
       });
@@ -141,6 +163,11 @@ export function initializeWebSocket(httpServer: HTTPServer) {
      */
     (socket as any).on("leave_conversation", async (conversationId: number) => {
       if (!(await isConversationParticipant(conversationId, socket.userId))) {
+        logger.warn("WebSocket leave denied: Not a participant", {
+          socketId: socket.id,
+          userId: socket.userId,
+          conversationId,
+        });
         socket.emit("error", {
           message: "Not authorized for this conversation",
         });
@@ -148,7 +175,8 @@ export function initializeWebSocket(httpServer: HTTPServer) {
       }
       const room = `conversation:${conversationId}`;
       socket.leave(room);
-      console.log("WebSocket room left", {
+      logger.info("WebSocket room left", {
+        socketId: socket.id,
         userId: socket.userId,
         conversationId,
       });
@@ -160,12 +188,19 @@ export function initializeWebSocket(httpServer: HTTPServer) {
     (socket as any).on("send_message", async (payload: MessagePayload) => {
       try {
         if (!socket.userId) {
+          logger.warn("WebSocket send_message failed: Not authenticated", {
+            socketId: socket.id,
+          });
           socket.emit("error", { message: "Not authenticated" });
           return;
         }
 
         const db = await getDb();
         if (!db) {
+          logger.error("WebSocket send_message failed: Database unavailable", {
+            socketId: socket.id,
+            userId: socket.userId,
+          });
           socket.emit("error", { message: "Database unavailable" });
           return;
         }
@@ -178,6 +213,11 @@ export function initializeWebSocket(httpServer: HTTPServer) {
           .limit(1);
 
         if (conv.length === 0) {
+          logger.warn("WebSocket send_message failed: Conversation not found", {
+            socketId: socket.id,
+            userId: socket.userId,
+            conversationId: payload.conversationId,
+          });
           socket.emit("error", { message: "Conversation not found" });
           return;
         }
@@ -187,6 +227,11 @@ export function initializeWebSocket(httpServer: HTTPServer) {
         const isRecipient = conversation.recipientId === socket.userId;
 
         if (!isInitiator && !isRecipient) {
+          logger.warn("WebSocket send_message denied: Not a participant", {
+            socketId: socket.id,
+            userId: socket.userId,
+            conversationId: payload.conversationId,
+          });
           socket.emit("error", {
             message: "Not a participant in this conversation",
           });
@@ -211,6 +256,11 @@ export function initializeWebSocket(httpServer: HTTPServer) {
           .limit(1);
 
         if (blocked.length > 0) {
+          logger.info("WebSocket send_message blocked by user settings", {
+            socketId: socket.id,
+            userId: socket.userId,
+            conversationId: payload.conversationId,
+          });
           socket.emit("error", { message: "Message blocked by user settings" });
           return;
         }
@@ -223,6 +273,10 @@ export function initializeWebSocket(httpServer: HTTPServer) {
           .limit(1);
 
         if (user.length === 0) {
+          logger.warn("WebSocket send_message failed: User not found", {
+            socketId: socket.id,
+            userId: socket.userId,
+          });
           socket.emit("error", { message: "User not found" });
           return;
         }
@@ -242,6 +296,11 @@ export function initializeWebSocket(httpServer: HTTPServer) {
         );
 
         if (!isValidSignature) {
+          logger.warn("WebSocket send_message failed: Invalid signature", {
+            socketId: socket.id,
+            userId: socket.userId,
+            conversationId: payload.conversationId,
+          });
           socket.emit("error", { message: "Invalid signature" });
           return;
         }
@@ -274,11 +333,18 @@ export function initializeWebSocket(httpServer: HTTPServer) {
         // Send acknowledgment
         socket.emit("message_sent", { messageId, timestamp: Date.now() });
 
-        console.log(
-          `Message ${messageId} sent in conversation ${payload.conversationId}`,
-        );
-      } catch (error) {
-        console.error("Error sending message:", error);
+        logger.info("WebSocket message sent", {
+          socketId: socket.id,
+          userId: socket.userId,
+          conversationId: payload.conversationId,
+          messageId,
+        });
+      } catch (error: any) {
+        logger.error("WebSocket send_message error", {
+          socketId: socket.id,
+          userId: socket.userId,
+          error: error.message,
+        });
         socket.emit("error", { message: "Failed to send message" });
       }
     });
@@ -311,8 +377,13 @@ export function initializeWebSocket(httpServer: HTTPServer) {
     /**
      * Disconnect handler
      */
-    (socket as any).on("disconnect", () => {
-      console.log(`User ${socket.publicId} disconnected: ${socket.id}`);
+    (socket as any).on("disconnect", (reason: string) => {
+      logger.info("WebSocket disconnected", {
+        socketId: socket.id,
+        userId: socket.userId,
+        publicId: socket.publicId,
+        reason,
+      });
 
       // Remove from user connections
       if (socket.userId) {
@@ -330,7 +401,11 @@ export function initializeWebSocket(httpServer: HTTPServer) {
      * Error handler
      */
     (socket as any).on("error", (error: any) => {
-      console.error(`Socket error for user ${socket.publicId}:`, error);
+      logger.error("WebSocket socket-level error", {
+        socketId: socket.id,
+        userId: socket.userId,
+        error: error.message || error,
+      });
     });
   });
 
