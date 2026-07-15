@@ -69,6 +69,25 @@
 
 関連コード: [`lib/auth-context.tsx`](lib/auth-context.tsx)、[`lib/trpc.ts`](lib/trpc.ts)、[`lib/websocket.ts`](lib/websocket.ts)
 
+### データベーススキーマを修正する
+
+- [ ] `app_users.publicKey` の `UNIQUE` 制約を廃止する。
+- [ ] 公開鍵の一意性が必要な場合は、`SHA-256(publicKey)` を保存する `publicKeyHash` カラムを追加し、こちらへ `UNIQUE` 制約を付与する。
+- [ ] MySQL (`utf8mb4`) でインデックス長制限 (3072 bytes) を超えないことを確認する。
+
+**完了条件:** `pnpm db:push` がエラーなく実行でき、`ER_TOO_LONG_KEY` が発生しないこと。
+
+### API・WebSocketへレートリミットを追加する
+
+- [ ] 登録APIへIPごとのレートリミットを追加する。
+- [ ] ログインAPIへレートリミットを追加する。
+- [ ] DM作成APIへレートリミットを追加する。
+- [ ] メッセージ送信API・WebSocketへ送信頻度制限を追加する。
+- [ ] 通報・ブロックAPIへレートリミットを追加する。
+- [ ] レート超過時は `429 Too Many Requests` を返す。
+
+**完了条件:** 短時間に大量のリクエストやメッセージ送信を行っても、自動的に制限されサーバーへ過度な負荷をかけられないこと。
+
 ## P1: High — データ整合性と主要機能
 
 ### データベース制約とクエリを改善する
