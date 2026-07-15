@@ -23,10 +23,11 @@ let socket: Socket | null = null;
 export function initializeWebSocket(
   serverUrl: string,
   token: string,
+  publicId: string,
   onMessage: (message: Message) => void,
   onTyping: (user: TypingUser) => void,
   onStopTyping: (userId: number) => void,
-  onError: (error: string) => void,
+  onError: (error: string) => void
 ): Socket {
   if (socket?.connected) {
     return socket;
@@ -35,6 +36,7 @@ export function initializeWebSocket(
   socket = io(serverUrl, {
     auth: {
       token,
+      publicId,
     },
     reconnection: true,
     reconnectionDelay: 1000,
@@ -109,7 +111,7 @@ export async function sendMessage(
   conversationId: number,
   content: string,
   signature: string,
-  timestamp: number,
+  timestamp: number
 ): Promise<void> {
   if (!socket) {
     throw new Error("Socket not initialized");
@@ -130,7 +132,7 @@ export async function sendMessage(
         } else {
           resolve();
         }
-      },
+      }
     );
   });
 }

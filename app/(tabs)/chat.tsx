@@ -12,7 +12,6 @@ import { useLocalSearchParams } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/lib/auth-context";
 import { trpc } from "@/lib/trpc";
-import { getApiBaseUrl } from "@/constants/oauth";
 import * as WebSocket from "@/lib/websocket";
 import * as CryptoLib from "@/lib/crypto";
 
@@ -38,7 +37,7 @@ export default function ChatScreen() {
   const convId = parseInt(conversationId || "0");
   const getMessagesQuery = trpc.dm.getMessages.useQuery(
     { conversationId: convId },
-    { enabled: convId > 0 },
+    { enabled: convId > 0 }
   );
 
   useEffect(() => {
@@ -70,12 +69,13 @@ export default function ChatScreen() {
       };
 
       WebSocket.initializeWebSocket(
-        getApiBaseUrl(),
+        "http://localhost:3000", // Replace with actual server URL
         authState.token,
+        authState.user?.publicId || "",
         handleMessage,
         handleTyping,
         handleStopTyping,
-        handleError,
+        handleError
       );
 
       WebSocket.joinConversation(convId);
@@ -84,7 +84,7 @@ export default function ChatScreen() {
         WebSocket.leaveConversation(convId);
       };
     }
-  }, [convId, authState.token]);
+  }, [convId, authState.token, authState.user?.publicId]);
 
   const handleSendMessage = async () => {
     if (!inputText.trim() || !authState.user) return;
@@ -100,7 +100,7 @@ export default function ChatScreen() {
 
       const signature = await CryptoLib.createRequestSignature(
         JSON.stringify({ conversationId: convId, content: inputText }),
-        timestamp,
+        timestamp
       );
 
       await WebSocket.sendMessage(convId, inputText, signature, timestamp);
@@ -129,13 +129,13 @@ export default function ChatScreen() {
               {item.senderLabel}
             </Text>
           )}
-          <Text
-            className={`text-sm ${isOwn ? "text-white" : "text-foreground"}`}
-          >
+          <Text className={`text-sm ${isOwn ? "text-white" : "text-foreground"}`}>
             {item.content}
           </Text>
           <Text
-            className={`text-xs mt-1 ${isOwn ? "text-white/70" : "text-muted"}`}
+            className={`text-xs mt-1 ${
+              isOwn ? "text-white/70" : "text-muted"
+            }`}
           >
             {new Date(item.createdAt).toLocaleTimeString("ja-JP", {
               hour: "2-digit",
