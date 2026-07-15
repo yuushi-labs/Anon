@@ -1,23 +1,15 @@
 import { z } from "zod";
-import { publicProcedure, router } from "../_core/trpc";
+import { protectedAppProcedure, publicProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 
-// Create a db helper
-const db = {
-  insert: async (table: any, values: any) => {
-    const database = await getDb();
-    if (!database) throw new Error("Database not available");
-    return database.insert(table).values(values);
-  },
-  select: async () => {
-    const database = await getDb();
-    if (!database) throw new Error("Database not available");
-    return database.select();
-  },
-};
-import { appUsers, conversations, messages, blocks, reports } from "../../drizzle/schema";
-import { eq, and, or } from "drizzle-orm";
-import { generateKeyPair, verifyRequestSignature } from "../_core/crypto";
+import {
+  appUsers,
+  conversations,
+  messages,
+  blocks,
+  reports,
+} from "../../drizzle/schema";
+import { desc, eq, and, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 /**
@@ -37,7 +29,7 @@ export const dmRouter = router({
         publicId: z.string().min(1).max(255),
         publicKey: z.string().min(1).max(1024), // PEM format public key
         iconUrl: z.string().optional(),
-      })
+      }),
     )
     .mutation(async ({ input }) => {
       try {
@@ -107,7 +99,7 @@ export const dmRouter = router({
    */
   getUser: publicProcedure
     .input(z.object({ publicId: z.string() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) {
         throw new TRPCError({
@@ -142,14 +134,14 @@ export const dmRouter = router({
    * Start a new conversation (DM)
    * Only initiator (sender) is anonymous
    */
-  startConversation: publicProcedure
+  startConversation: protectedAppProcedure
     .input(
       z.object({
-        initiatorId: z.number(),
+        initiatorId: z.number().optional(),
         recipientPublicId: z.string(),
-      })
+      }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const database = await getDb();
         if (!database) {
@@ -181,9 +173,9 @@ export const dmRouter = router({
           .from(conversations)
           .where(
             and(
-              eq(conversations.initiatorId, input.initiatorId),
-              eq(conversations.recipientId, recipientId)
-            )
+              eq(conversations.initiatorId, ctx.appUser.id),
+              eq(conversations.recipientId, recipientId),
+            ),
           )
           .limit(1);
 
@@ -205,7 +197,7 @@ export const dmRouter = router({
 
         // Create new conversation
         const result = await database.insert(conversations).values({
-          initiatorId: input.initiatorId,
+          initiatorId: ctx.appUser.id,
           recipientId: recipientId,
           anonLabel: anonLabel,
         });
@@ -227,9 +219,9 @@ export const dmRouter = router({
   /**
    * Get conversations for a user
    */
-  getConversations: publicProcedure
-    .input(z.object({ userId: z.number() }))
-    .query(async ({ input }) => {
+  getConversations: protectedAppProcedure
+    .input(z.object({ userId: z.number().optional() }).optional())
+    .query(async ({ ctx }) => {
       const database = await getDb();
       if (!database) {
         throw new TRPCError({
@@ -243,16 +235,16 @@ export const dmRouter = router({
         .from(conversations)
         .where(
           or(
-            eq(conversations.initiatorId, input.userId),
-            eq(conversations.recipientId, input.userId)
-          )
+            eq(conversations.initiatorId, ctx.appUser.id),
+            eq(conversations.recipientId, ctx.appUser.id),
+          ),
         );
 
       // Enrich with user info and latest message
       const enriched = await Promise.all(
         convs.map(async (conv: typeof conversations.$inferSelect) => {
           const otherUserId =
-            conv.initiatorId === input.userId
+            conv.initiatorId === ctx.appUser.id
               ? conv.recipientId
               : conv.initiatorId;
 
@@ -266,18 +258,18 @@ export const dmRouter = router({
             .select()
             .from(messages)
             .where(eq(messages.conversationId, conv.id))
-            .orderBy(messages.createdAt)
+            .orderBy(desc(messages.createdAt))
             .limit(1);
 
           return {
             conversationId: conv.id,
             otherUser: otherUser[0] || null,
-            isInitiator: conv.initiatorId === input.userId,
+            isInitiator: conv.initiatorId === ctx.appUser.id,
             anonLabel: conv.anonLabel,
             lastMessage: latestMsg[0] || null,
             createdAt: conv.createdAt,
           };
-        })
+        }),
       );
 
       return enriched;
@@ -286,9 +278,11 @@ export const dmRouter = router({
   /**
    * Get messages in a conversation
    */
-  getMessages: publicProcedure
-    .input(z.object({ conversationId: z.number(), limit: z.number().default(50) }))
-    .query(async ({ input }) => {
+  getMessages: protectedAppProcedure
+    .input(
+      z.object({ conversationId: z.number(), limit: z.number().default(50) }),
+    )
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) {
         throw new TRPCError({
@@ -297,11 +291,35 @@ export const dmRouter = router({
         });
       }
 
+      const conversation = await database
+        .select()
+        .from(conversations)
+        .where(eq(conversations.id, input.conversationId))
+        .limit(1);
+
+      if (conversation.length === 0) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Conversation not found",
+        });
+      }
+
+      const isParticipant =
+        conversation[0].initiatorId === ctx.appUser.id ||
+        conversation[0].recipientId === ctx.appUser.id;
+
+      if (!isParticipant) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Not a participant",
+        });
+      }
+
       const msgs = await database
         .select()
         .from(messages)
         .where(eq(messages.conversationId, input.conversationId))
-        .orderBy(messages.createdAt)
+        .orderBy(desc(messages.createdAt))
         .limit(input.limit);
 
       return msgs;
@@ -310,9 +328,14 @@ export const dmRouter = router({
   /**
    * Block a user
    */
-  blockUser: publicProcedure
-    .input(z.object({ blockerId: z.number(), blockedPublicId: z.string() }))
-    .mutation(async ({ input }) => {
+  blockUser: protectedAppProcedure
+    .input(
+      z.object({
+        blockerId: z.number().optional(),
+        blockedPublicId: z.string(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
       try {
         const database = await getDb();
         if (!database) {
@@ -343,9 +366,9 @@ export const dmRouter = router({
           .from(blocks)
           .where(
             and(
-              eq(blocks.blockerId, input.blockerId),
-              eq(blocks.blockedId, blockedId)
-            )
+              eq(blocks.blockerId, ctx.appUser.id),
+              eq(blocks.blockedId, blockedId),
+            ),
           )
           .limit(1);
 
@@ -354,7 +377,7 @@ export const dmRouter = router({
         }
 
         await database.insert(blocks).values({
-          blockerId: input.blockerId,
+          blockerId: ctx.appUser.id,
           blockedId: blockedId,
         });
 
@@ -371,15 +394,15 @@ export const dmRouter = router({
   /**
    * Report a message
    */
-  reportMessage: publicProcedure
+  reportMessage: protectedAppProcedure
     .input(
       z.object({
-        reporterId: z.number(),
+        reporterId: z.number().optional(),
         messageId: z.number(),
         reason: z.string().min(1).max(1000),
-      })
+      }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const database = await getDb();
         if (!database) {
@@ -402,8 +425,27 @@ export const dmRouter = router({
           });
         }
 
+        const conversation = await database
+          .select()
+          .from(conversations)
+          .where(eq(conversations.id, msg[0].conversationId))
+          .limit(1);
+
+        const canReport = conversation.some(
+          (conv) =>
+            conv.initiatorId === ctx.appUser.id ||
+            conv.recipientId === ctx.appUser.id,
+        );
+
+        if (!canReport) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Not authorized to report this message",
+          });
+        }
+
         await database.insert(reports).values({
-          reporterId: input.reporterId,
+          reporterId: ctx.appUser.id,
           reportedMessageId: input.messageId,
           reason: input.reason,
         });
@@ -418,14 +460,14 @@ export const dmRouter = router({
       }
     }),
 
-  registerFCMToken: publicProcedure
+  registerFCMToken: protectedAppProcedure
     .input(
       z.object({
-        userId: z.number(),
+        userId: z.number().optional(),
         fcmToken: z.string().min(1).max(512),
-      })
+      }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const database = await getDb();
         if (!database) {
@@ -438,7 +480,7 @@ export const dmRouter = router({
         await database
           .update(appUsers)
           .set({ fcmToken: input.fcmToken })
-          .where(eq(appUsers.id, input.userId));
+          .where(eq(appUsers.id, ctx.appUser.id));
 
         return { success: true, message: "FCM token registered successfully" };
       } catch (error) {

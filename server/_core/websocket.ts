@@ -1,9 +1,15 @@
 import { Server as HTTPServer } from "http";
 import { Server as SocketIOServer, Socket as BaseSocket } from "socket.io";
 import { getDb } from "../db";
-import { messages, conversations, appUsers } from "../../drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import {
+  messages,
+  conversations,
+  appUsers,
+  blocks,
+} from "../../drizzle/schema";
+import { eq, and, or } from "drizzle-orm";
 import { verifyRequestSignature } from "./crypto";
+import { verifyAppToken } from "./app-jwt";
 
 /**
  * WebSocket server for real-time messaging
@@ -23,13 +29,37 @@ interface MessagePayload {
   signature: string;
 }
 
+async function isConversationParticipant(
+  conversationId: number,
+  userId: number | undefined,
+): Promise<boolean> {
+  if (!userId) return false;
+  const db = await getDb();
+  if (!db) return false;
+  const rows = await db
+    .select()
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .limit(1);
+  return rows.some(
+    (conversation) =>
+      conversation.initiatorId === userId ||
+      conversation.recipientId === userId,
+  );
+}
+
 // Store active user connections
 const userConnections = new Map<number, Set<string>>();
 
 export function initializeWebSocket(httpServer: HTTPServer) {
   const io = new SocketIOServer(httpServer, {
     cors: {
-      origin: "*",
+      origin: (
+        process.env.SOCKET_IO_ALLOWED_ORIGINS ??
+        "http://localhost:8081,http://localhost:19006"
+      )
+        .split(",")
+        .map((origin: string) => origin.trim()),
       methods: ["GET", "POST"],
     },
   });
@@ -40,13 +70,12 @@ export function initializeWebSocket(httpServer: HTTPServer) {
   io.use(async (socket: AuthenticatedSocket, next: any) => {
     try {
       const token = socket.handshake.auth.token;
-      const publicId = socket.handshake.auth.publicId;
 
-      if (!token || !publicId) {
+      if (!token) {
         return next(new Error("Authentication required"));
       }
 
-      // Verify token (simplified - in production, use JWT verification)
+      const payload = await verifyAppToken(token);
       const db = await getDb();
       if (!db) {
         return next(new Error("Database unavailable"));
@@ -55,7 +84,7 @@ export function initializeWebSocket(httpServer: HTTPServer) {
       const user = await db
         .select()
         .from(appUsers)
-        .where(eq(appUsers.publicId, publicId))
+        .where(eq(appUsers.id, payload.userId))
         .limit(1);
 
       if (user.length === 0) {
@@ -63,7 +92,7 @@ export function initializeWebSocket(httpServer: HTTPServer) {
       }
 
       socket.userId = user[0].id;
-      socket.publicId = publicId;
+      socket.publicId = user[0].publicId;
       next();
     } catch (error) {
       console.error("WebSocket auth error:", error);
@@ -88,19 +117,41 @@ export function initializeWebSocket(httpServer: HTTPServer) {
     /**
      * Join conversation room
      */
-    (socket as any).on("join_conversation", (conversationId: number) => {
+    (socket as any).on("join_conversation", async (conversationId: number) => {
+      if (!(await isConversationParticipant(conversationId, socket.userId))) {
+        socket.emit("error", {
+          message: "Not authorized for this conversation",
+        });
+        console.warn("WebSocket join denied", {
+          userId: socket.userId,
+          conversationId,
+        });
+        return;
+      }
       const room = `conversation:${conversationId}`;
       socket.join(room);
-      console.log(`User ${socket.publicId} joined room ${room}`);
+      console.log("WebSocket room joined", {
+        userId: socket.userId,
+        conversationId,
+      });
     });
 
     /**
      * Leave conversation room
      */
-    (socket as any).on("leave_conversation", (conversationId: number) => {
+    (socket as any).on("leave_conversation", async (conversationId: number) => {
+      if (!(await isConversationParticipant(conversationId, socket.userId))) {
+        socket.emit("error", {
+          message: "Not authorized for this conversation",
+        });
+        return;
+      }
       const room = `conversation:${conversationId}`;
       socket.leave(room);
-      console.log(`User ${socket.publicId} left room ${room}`);
+      console.log("WebSocket room left", {
+        userId: socket.userId,
+        conversationId,
+      });
     });
 
     /**
@@ -136,7 +187,31 @@ export function initializeWebSocket(httpServer: HTTPServer) {
         const isRecipient = conversation.recipientId === socket.userId;
 
         if (!isInitiator && !isRecipient) {
-          socket.emit("error", { message: "Not a participant in this conversation" });
+          socket.emit("error", {
+            message: "Not a participant in this conversation",
+          });
+          return;
+        }
+
+        const blocked = await db
+          .select()
+          .from(blocks)
+          .where(
+            or(
+              and(
+                eq(blocks.blockerId, conversation.initiatorId),
+                eq(blocks.blockedId, conversation.recipientId),
+              ),
+              and(
+                eq(blocks.blockerId, conversation.recipientId),
+                eq(blocks.blockedId, conversation.initiatorId),
+              ),
+            ),
+          )
+          .limit(1);
+
+        if (blocked.length > 0) {
+          socket.emit("error", { message: "Message blocked by user settings" });
           return;
         }
 
@@ -163,7 +238,7 @@ export function initializeWebSocket(httpServer: HTTPServer) {
           payload.signature,
           publicKey,
           payload.timestamp,
-          5 * 60 * 1000 // 5 minute expiry
+          5 * 60 * 1000, // 5 minute expiry
         );
 
         if (!isValidSignature) {
@@ -199,7 +274,9 @@ export function initializeWebSocket(httpServer: HTTPServer) {
         // Send acknowledgment
         socket.emit("message_sent", { messageId, timestamp: Date.now() });
 
-        console.log(`Message ${messageId} sent in conversation ${payload.conversationId}`);
+        console.log(
+          `Message ${messageId} sent in conversation ${payload.conversationId}`,
+        );
       } catch (error) {
         console.error("Error sending message:", error);
         socket.emit("error", { message: "Failed to send message" });
@@ -209,7 +286,9 @@ export function initializeWebSocket(httpServer: HTTPServer) {
     /**
      * Typing indicator
      */
-    (socket as any).on("typing", (conversationId: number) => {
+    (socket as any).on("typing", async (conversationId: number) => {
+      if (!(await isConversationParticipant(conversationId, socket.userId)))
+        return;
       const room = `conversation:${conversationId}`;
       socket.to(room).emit("user_typing", {
         userId: socket.userId,
@@ -220,7 +299,9 @@ export function initializeWebSocket(httpServer: HTTPServer) {
     /**
      * Stop typing
      */
-    (socket as any).on("stop_typing", (conversationId: number) => {
+    (socket as any).on("stop_typing", async (conversationId: number) => {
+      if (!(await isConversationParticipant(conversationId, socket.userId)))
+        return;
       const room = `conversation:${conversationId}`;
       socket.to(room).emit("user_stop_typing", {
         userId: socket.userId,
@@ -260,7 +341,9 @@ export function initializeWebSocket(httpServer: HTTPServer) {
  * Check if user is online
  */
 export function isUserOnline(userId: number): boolean {
-  return userConnections.has(userId) && (userConnections.get(userId)?.size ?? 0) > 0;
+  return (
+    userConnections.has(userId) && (userConnections.get(userId)?.size ?? 0) > 0
+  );
 }
 
 /**

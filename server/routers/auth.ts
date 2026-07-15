@@ -5,11 +5,7 @@ import { appUsers } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { verifyRequestSignature } from "../_core/crypto";
 import { TRPCError } from "@trpc/server";
-import { SignJWT } from "jose";
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "your-secret-key-change-in-production"
-);
+import { signAppToken, verifyAppToken } from "../_core/app-jwt";
 
 /**
  * Authentication router for public key-based auth
@@ -28,7 +24,7 @@ export const authRouter = router({
         publicId: z.string(),
         timestamp: z.number(),
         signature: z.string(),
-      })
+      }),
     )
     .mutation(async ({ input }) => {
       try {
@@ -63,7 +59,7 @@ export const authRouter = router({
           input.signature,
           user.publicKey,
           input.timestamp,
-          5 * 60 * 1000 // 5 minute expiry
+          5 * 60 * 1000, // 5 minute expiry
         );
 
         if (!isValidSignature) {
@@ -74,14 +70,11 @@ export const authRouter = router({
         }
 
         // Generate JWT token
-        const token = await new SignJWT({
+        const token = await signAppToken({
           userId: user.id,
           publicId: user.publicId,
           username: user.username,
-        })
-          .setProtectedHeader({ alg: "HS256" })
-          .setExpirationTime("7d")
-          .sign(JWT_SECRET);
+        });
 
         return {
           success: true,
@@ -110,12 +103,11 @@ export const authRouter = router({
     .input(z.object({ token: z.string() }))
     .query(async ({ input }) => {
       try {
-        const { jwtVerify } = await import("jose");
-        const verified = await jwtVerify(input.token, JWT_SECRET);
+        const payload = await verifyAppToken(input.token);
 
         return {
           valid: true,
-          payload: verified.payload,
+          payload,
         };
       } catch (error) {
         return {

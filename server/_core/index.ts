@@ -29,6 +29,10 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET is required in production");
+  }
+
   const app = express();
   const server = createServer(app);
 
@@ -38,7 +42,10 @@ async function startServer() {
     if (origin) {
       res.header("Access-Control-Allow-Origin", origin);
     }
-    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.header(
+      "Access-Control-Allow-Methods",
+      "GET, POST, PUT, DELETE, OPTIONS",
+    );
     res.header(
       "Access-Control-Allow-Headers",
       "Origin, X-Requested-With, Content-Type, Accept, Authorization",
