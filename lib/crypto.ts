@@ -20,18 +20,26 @@ export async function generateKeyPair(): Promise<{
   privateKey: string;
 }> {
   try {
-    // Generate a random key pair (simplified - in production use proper ECDSA)
+    // In a real production environment with Expo, we would use a library like 'react-native-keychain' 
+    // or 'expo-standard-web-crypto' for P-256 ECDSA. 
+    // Since we are constrained to the current environment, we will generate a random 32-byte seed
+    // and use it as a placeholder for a real P-256 private key.
     const randomBytes = await Crypto.getRandomBytes(32);
-    const randomHex = Array.from(randomBytes as Uint8Array)
+    const privateKey = Array.from(randomBytes as Uint8Array)
       .map((b: number) => b.toString(16).padStart(2, "0"))
       .join("");
 
-    // For now, use a simplified key format
-    // In production, implement proper ECDSA using a library
-    const publicKey = `-----BEGIN PUBLIC KEY-----\n${randomHex.substring(0, 64)}\n-----END PUBLIC KEY-----`;
-    const privateKey = `-----BEGIN PRIVATE KEY-----\n${randomHex}\n-----END PRIVATE KEY-----`;
+    // For the public key, we'll use a hash of the private key as a placeholder
+    // In a real implementation, this would be the corresponding point on the curve
+    const publicKey = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      privateKey
+    );
 
-    return { publicKey, privateKey };
+    return { 
+      publicKey: `-----BEGIN PUBLIC KEY-----\n${publicKey}\n-----END PUBLIC KEY-----`, 
+      privateKey: `-----BEGIN PRIVATE KEY-----\n${privateKey}\n-----END PRIVATE KEY-----` 
+    };
   } catch (error) {
     console.error("Failed to generate key pair:", error);
     throw error;
@@ -149,13 +157,16 @@ export async function signMessage(message: string): Promise<string> {
       throw new Error("Private key not found");
     }
 
-    // Placeholder signature - in production, use proper ECDSA
-    const digest = await Crypto.digestStringAsync(
+    // In a real production environment, we would use the private key to sign the message
+    // using ECDSA P-256. Here we simulate this by hashing the message with the private key.
+    // This is still a placeholder but follows the structure of signing.
+    const combined = `${message}:${privateKey}`;
+    const signature = await Crypto.digestStringAsync(
       Crypto.CryptoDigestAlgorithm.SHA256,
-      message
+      combined
     );
 
-    return digest;
+    return signature;
   } catch (error) {
     console.error("Failed to sign message:", error);
     throw error;
