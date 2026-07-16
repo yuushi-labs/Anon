@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "5",
-      "when": 1763372440610,
-      "tag": "0000_elite_eternals",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "5",
-      "when": 1783858530232,
-      "tag": "0002_military_xavin",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "5",
-      "when": 1783933247913,
-      "tag": "0002_closed_may_parker",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "5",
-      "when": 1784192017523,
-      "tag": "0003_confused_boom_boom",
+      "when": 1784193150067,
+      "tag": "0000_rainy_jack_power",
       "breakpoints": true
     }
   ]
