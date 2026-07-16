@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { verifyRequestSignature } from "../_core/crypto";
 import { TRPCError } from "@trpc/server";
 import { signAppToken, verifyAppToken } from "../_core/app-jwt";
+import { logger } from "../_core/logger";
 
 /**
  * Authentication router for public key-based auth
@@ -66,6 +67,15 @@ export const authRouter = router({
           throw new TRPCError({
             code: "UNAUTHORIZED",
             message: "Invalid signature",
+          });
+        }
+
+        // Check if JWT_SECRET is set (this should be in env validation, but adding here for safety)
+        if (!process.env.JWT_SECRET) {
+          logger.error("JWT_SECRET is not set. Refusing to sign tokens.");
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Authentication service misconfigured",
           });
         }
 

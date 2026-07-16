@@ -137,7 +137,6 @@ export const dmRouter = router({
   startConversation: protectedAppProcedure
     .input(
       z.object({
-        initiatorId: z.number().optional(),
         recipientPublicId: z.string(),
       }),
     )
@@ -220,7 +219,7 @@ export const dmRouter = router({
    * Get conversations for a user
    */
   getConversations: protectedAppProcedure
-    .input(z.object({ userId: z.number().optional() }).optional())
+    .input(z.object({}).optional())
     .query(async ({ ctx }) => {
       const database = await getDb();
       if (!database) {
@@ -331,7 +330,6 @@ export const dmRouter = router({
   blockUser: protectedAppProcedure
     .input(
       z.object({
-        blockerId: z.number().optional(),
         blockedPublicId: z.string(),
       }),
     )
@@ -397,7 +395,6 @@ export const dmRouter = router({
   reportMessage: protectedAppProcedure
     .input(
       z.object({
-        reporterId: z.number().optional(),
         messageId: z.number(),
         reason: z.string().min(1).max(1000),
       }),
@@ -463,7 +460,6 @@ export const dmRouter = router({
   registerFCMToken: protectedAppProcedure
     .input(
       z.object({
-        userId: z.number().optional(),
         fcmToken: z.string().min(1).max(512),
       }),
     )
