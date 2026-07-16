@@ -56,7 +56,7 @@ export function initializeWebSocket(httpServer: HTTPServer) {
   const io = new SocketIOServer(httpServer, {
     cors: {
       origin: (
-        process.env.SOCKET_IO_ALLOWED_ORIGINS ??
+        process.env.SOCKET_IO_ALLOWED_ORIGINS ||
         "http://localhost:8081,http://localhost:19006"
       )
         .split(",")
@@ -138,6 +138,16 @@ export function initializeWebSocket(httpServer: HTTPServer) {
      * Join conversation room
      */
     (socket as any).on("join_conversation", async (conversationId: number) => {
+      // Input validation
+      if (typeof conversationId !== "number") {
+        logger.warn("WebSocket join denied: Invalid conversationId", {
+          socketId: socket.id,
+          userId: socket.userId,
+          conversationId,
+        });
+        return;
+      }
+
       if (!(await isConversationParticipant(conversationId, socket.userId))) {
         logger.warn("WebSocket join denied: Not a participant", {
           socketId: socket.id,
