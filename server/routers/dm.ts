@@ -11,6 +11,7 @@ import {
 } from "../../drizzle/schema";
 import { desc, eq, and, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { createHash } from "crypto";
 
 /**
  * Anonymous DM App Router
@@ -55,11 +56,14 @@ export const dmRouter = router({
           });
         }
 
-        // Check if public key already exists
+        // Generate public key hash for uniqueness check
+        const publicKeyHash = createHash("sha256").update(input.publicKey).digest("hex");
+
+        // Check if public key hash already exists
         const existingKey = await database
           .select()
           .from(appUsers)
-          .where(eq(appUsers.publicKey, input.publicKey))
+          .where(eq(appUsers.publicKeyHash, publicKeyHash))
           .limit(1);
 
         if (existingKey.length > 0) {
@@ -74,6 +78,7 @@ export const dmRouter = router({
           publicId: input.publicId,
           username: input.username,
           publicKey: input.publicKey,
+          publicKeyHash: publicKeyHash,
           iconUrl: input.iconUrl || null,
         });
 
