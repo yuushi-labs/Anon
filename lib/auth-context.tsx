@@ -170,22 +170,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "CLEAR_ERROR" });
 
         const timestamp = Date.now();
+        const nonce = await CryptoLib.generateNonce();
         const privateKey = await CryptoLib.getPrivateKey();
 
         if (!privateKey) {
           throw new Error("Private key not found. Please register first.");
         }
 
-        // Sign the timestamp
+        // Sign the publicId + timestamp + nonce
         const signature = await CryptoLib.createRequestSignature(
-          timestamp.toString(),
+          publicId,
           timestamp,
+          nonce,
         );
 
         // Login with backend
         const result = await loginMutation.mutateAsync({
           publicId,
           timestamp,
+          nonce,
           signature,
         });
 
