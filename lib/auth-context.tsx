@@ -4,6 +4,7 @@ import React, {
   useReducer,
   useCallback,
   ReactNode,
+  useRef,
 } from "react";
 import * as CryptoLib from "./crypto";
 import { trpc } from "./trpc";
@@ -94,6 +95,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, initialState);
   const router = useRouter();
   const queryClient = useQueryClient();
+  const isInitializing = useRef(false);
+  
   const registerMutation = trpc.dm.register.useMutation();
   const loginMutation = trpc.auth.login.useMutation();
   const registerFCMMutation = trpc.dm.registerFCMToken.useMutation();
@@ -133,8 +136,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return unsubscribe;
   }, [router]);
-
-  // Initialize auth state on mount is moved below login definition
 
   const registerFCMToken = useCallback(async () => {
     try {
@@ -216,6 +217,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Initialize auth state on mount
   React.useEffect(() => {
     const initializeAuth = async () => {
+      if (isInitializing.current) return;
+      isInitializing.current = true;
+      
       try {
         const keysExist = await CryptoLib.keysExist();
         if (keysExist) {
@@ -223,7 +227,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (publicId) {
             // Try to restore session
             await login(publicId);
-            // dispatch({ type: "SET_LOADING", payload: false }); // login function already handles setting loading state
           } else {
             dispatch({ type: "SET_LOADING", payload: false });
           }
@@ -233,6 +236,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error("Failed to initialize auth:", error);
         dispatch({ type: "SET_LOADING", payload: false });
+      } finally {
+        // We don't reset isInitializing.current to true to prevent loops 
+        // if this component re-renders due to auth state changes
       }
     };
 
@@ -288,9 +294,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       disconnectWebSocket();
 
       // 2. Clear React Query cache
-      // We use resetQueries to clear all data and refetch if needed, 
-      // or clear() to completely wipe the cache. 
-      // For logout, clear() or removing auth-dependent queries is safer.
       queryClient.clear();
 
       // 3. Delete local authentication data
@@ -299,6 +302,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await removeSessionToken();
 
       dispatch({ type: "SET_SIGNED_OUT" });
+      
+      // Reset initialization flag so it can re-init if needed
+      isInitializing.current = false;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Logout failed";
