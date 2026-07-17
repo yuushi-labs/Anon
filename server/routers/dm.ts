@@ -326,7 +326,27 @@ export const dmRouter = router({
         .orderBy(desc(messages.createdAt))
         .limit(input.limit);
 
-      return msgs;
+      // Enrich messages with sender info (label and icon)
+      const enrichedMsgs = await Promise.all(
+        msgs.map(async (msg) => {
+          const sender = await database
+            .select()
+            .from(appUsers)
+            .where(eq(appUsers.id, msg.senderId))
+            .limit(1);
+          
+          const isInitiator = conversation[0].initiatorId === msg.senderId;
+          const senderUser = sender[0];
+
+          return {
+            ...msg,
+            senderLabel: isInitiator ? conversation[0].anonLabel : (senderUser?.username || "Unknown"),
+            senderIcon: isInitiator ? null : (senderUser?.iconUrl || null),
+          };
+        })
+      );
+
+      return enrichedMsgs;
     }),
 
   /**
@@ -395,13 +415,13 @@ export const dmRouter = router({
     }),
 
   /**
-   * Report a message
+   * Start a new conversation
    */
-  reportMessage: protectedAppProcedure
+  startConversation: protectedAppProcedure
     .input(
       z.object({
-        messageId: z.number(),
-        reason: z.string().min(1).max(1000),
+        recipientPublicId: z.string(),
+        initialMessage: z.string().min(1).max(2000),
       }),
     )
     .mutation(async ({ input, ctx }) => {

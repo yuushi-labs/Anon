@@ -52,6 +52,32 @@ async function isConversationParticipant(
 // Store active user connections
 const userConnections = new Map<number, Set<string>>();
 
+// Simple in-memory rate limiting for WebSocket events
+const eventLimits = new Map<string, { count: number; lastReset: number }>();
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const MAX_MESSAGES_PER_MINUTE = 30;
+
+function checkRateLimit(socketId: string, event: string, limit: number): boolean {
+  const key = `${socketId}:${event}`;
+  const now = Date.now();
+  const record = eventLimits.get(key) || { count: 0, lastReset: now };
+
+  if (now - record.lastReset > RATE_LIMIT_WINDOW) {
+    record.count = 1;
+    record.lastReset = now;
+    eventLimits.set(key, record);
+    return true;
+  }
+
+  if (record.count >= limit) {
+    return false;
+  }
+
+  record.count++;
+  eventLimits.set(key, record);
+  return true;
+}
+
 export function initializeWebSocket(httpServer: HTTPServer) {
   const io = new SocketIOServer(httpServer, {
     cors: {
@@ -197,6 +223,16 @@ export function initializeWebSocket(httpServer: HTTPServer) {
      */
     (socket as any).on("send_message", async (payload: MessagePayload) => {
       try {
+        // Rate limiting
+        if (!checkRateLimit(socket.id, "send_message", MAX_MESSAGES_PER_MINUTE)) {
+          logger.warn("WebSocket message rate limit exceeded", {
+            socketId: socket.id,
+            userId: socket.userId,
+          });
+          socket.emit("error", { message: "Too many messages. Please slow down." });
+          return;
+        }
+
         if (!socket.userId) {
           logger.warn("WebSocket send_message failed: Not authenticated", {
             socketId: socket.id,
@@ -394,6 +430,13 @@ export function initializeWebSocket(httpServer: HTTPServer) {
         publicId: socket.publicId,
         reason,
       });
+
+      // Clear rate limit records for this socket
+      for (const key of eventLimits.keys()) {
+        if (key.startsWith(`${socket.id}:`)) {
+          eventLimits.delete(key);
+        }
+      }
 
       // Remove from user connections
       if (socket.userId) {
