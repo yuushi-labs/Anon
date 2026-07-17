@@ -1,14 +1,71 @@
 import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
+import { Platform } from "react-native";
 
 /**
  * Cryptographic utilities for client-side key management
- * Uses Expo SecureStore for secure key storage
+ * Uses Expo SecureStore for secure key storage on native platforms,
+ * and localStorage as a fallback on web.
  */
 
 const PRIVATE_KEY_STORAGE_KEY = "dm_app_private_key";
 const PUBLIC_KEY_STORAGE_KEY = "dm_app_public_key";
 const PUBLIC_ID_STORAGE_KEY = "dm_app_public_id";
+
+/**
+ * Helper to get item from storage with web fallback
+ */
+async function getItem(key: string): Promise<string | null> {
+  try {
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.localStorage) {
+        return window.localStorage.getItem(key);
+      }
+      return null;
+    }
+    // SecureStore.getItemAsync is known to have issues on web in some Expo versions
+    return await SecureStore.getItemAsync(key);
+  } catch (error) {
+    console.warn(`Storage access failed for key ${key}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Helper to set item in storage with web fallback
+ */
+async function setItem(key: string, value: string): Promise<void> {
+  try {
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.setItem(key, value);
+      }
+      return;
+    }
+    await SecureStore.setItemAsync(key, value);
+  } catch (error) {
+    console.error(`Storage set failed for key ${key}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Helper to delete item from storage with web fallback
+ */
+async function deleteItem(key: string): Promise<void> {
+  try {
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.removeItem(key);
+      }
+      return;
+    }
+    await SecureStore.deleteItemAsync(key);
+  } catch (error) {
+    console.error(`Storage delete failed for key ${key}:`, error);
+    throw error;
+  }
+}
 
 /**
  * Generate ECDSA key pair using Web Crypto API
@@ -50,48 +107,28 @@ export async function generateKeyPair(): Promise<{
  * Save private key to secure storage
  */
 export async function savePrivateKey(privateKey: string): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(PRIVATE_KEY_STORAGE_KEY, privateKey);
-  } catch (error) {
-    console.error("Failed to save private key:", error);
-    throw error;
-  }
+  await setItem(PRIVATE_KEY_STORAGE_KEY, privateKey);
 }
 
 /**
  * Save public key to local storage
  */
 export async function savePublicKey(publicKey: string): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(PUBLIC_KEY_STORAGE_KEY, publicKey);
-  } catch (error) {
-    console.error("Failed to save public key:", error);
-    throw error;
-  }
+  await setItem(PUBLIC_KEY_STORAGE_KEY, publicKey);
 }
 
 /**
  * Get private key from secure storage
  */
 export async function getPrivateKey(): Promise<string | null> {
-  try {
-    return await SecureStore.getItemAsync(PRIVATE_KEY_STORAGE_KEY);
-  } catch (error) {
-    console.error("Failed to retrieve private key:", error);
-    return null;
-  }
+  return await getItem(PRIVATE_KEY_STORAGE_KEY);
 }
 
 /**
  * Get public key from local storage
  */
 export async function getPublicKey(): Promise<string | null> {
-  try {
-    return await SecureStore.getItemAsync(PUBLIC_KEY_STORAGE_KEY);
-  } catch (error) {
-    console.error("Failed to retrieve public key:", error);
-    return null;
-  }
+  return await getItem(PUBLIC_KEY_STORAGE_KEY);
 }
 
 /**
@@ -103,7 +140,7 @@ export async function keysExist(): Promise<boolean> {
     const publicKey = await getPublicKey();
     return !!privateKey && !!publicKey;
   } catch (error) {
-    console.error("Failed to check keys:", error);
+    // Return false instead of throwing to prevent initialization loops
     return false;
   }
 }
@@ -113,9 +150,9 @@ export async function keysExist(): Promise<boolean> {
  */
 export async function deleteKeys(): Promise<void> {
   try {
-    await SecureStore.deleteItemAsync(PRIVATE_KEY_STORAGE_KEY);
-    await SecureStore.deleteItemAsync(PUBLIC_KEY_STORAGE_KEY);
-    await SecureStore.deleteItemAsync(PUBLIC_ID_STORAGE_KEY);
+    await deleteItem(PRIVATE_KEY_STORAGE_KEY);
+    await deleteItem(PUBLIC_KEY_STORAGE_KEY);
+    await deleteItem(PUBLIC_ID_STORAGE_KEY);
   } catch (error) {
     console.error("Failed to delete keys:", error);
     throw error;
@@ -126,24 +163,14 @@ export async function deleteKeys(): Promise<void> {
  * Save public ID
  */
 export async function savePublicId(publicId: string): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(PUBLIC_ID_STORAGE_KEY, publicId);
-  } catch (error) {
-    console.error("Failed to save public ID:", error);
-    throw error;
-  }
+  await setItem(PUBLIC_ID_STORAGE_KEY, publicId);
 }
 
 /**
  * Get public ID
  */
 export async function getPublicId(): Promise<string | null> {
-  try {
-    return await SecureStore.getItemAsync(PUBLIC_ID_STORAGE_KEY);
-  } catch (error) {
-    console.error("Failed to retrieve public ID:", error);
-    return null;
-  }
+  return await getItem(PUBLIC_ID_STORAGE_KEY);
 }
 
 /**
