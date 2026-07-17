@@ -24,6 +24,7 @@ export const authRouter = router({
       z.object({
         publicId: z.string(),
         timestamp: z.number(),
+        nonce: z.string().optional(),
         signature: z.string(),
       }),
     )
@@ -54,12 +55,13 @@ export const authRouter = router({
         const user = users[0];
 
         // Verify signature
-        const messageToVerify = input.timestamp.toString();
+        // The message signed by client is "publicId:timestamp[:nonce]"
         const isValidSignature = verifyRequestSignature(
-          messageToVerify,
+          input.publicId,
           input.signature,
           user.publicKey,
           input.timestamp,
+          input.nonce,
           5 * 60 * 1000, // 5 minute expiry
         );
 

@@ -201,14 +201,30 @@ export async function signMessage(message: string): Promise<string> {
 }
 
 /**
+ * Generate a random nonce for replay attack prevention
+ */
+export async function generateNonce(): Promise<string> {
+  const randomBytes = await Crypto.getRandomBytes(16);
+  return Array.from(randomBytes as Uint8Array)
+    .map((b: number) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
  * Create a signature for API requests
+ * 
+ * Data normalization:
+ * The data is concatenated using colons (:) in the order: payload, timestamp, and optionally nonce.
+ * Example: "user_123:1625097600000:abc123nonce"
  */
 export async function createRequestSignature(
   payload: string,
-  timestamp: number
+  timestamp: number,
+  nonce?: string
 ): Promise<string> {
   try {
-    const message = `${payload}:${timestamp}`;
+    // Normalization: Concatenate parts with colons
+    const message = [payload, timestamp.toString(), nonce].filter(Boolean).join(":");
     return await signMessage(message);
   } catch (error) {
     console.error("Failed to create request signature:", error);

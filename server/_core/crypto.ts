@@ -102,12 +102,17 @@ export function createRequestSignature(
   return signMessage(message, privateKeyPem);
 }
 
+// In-memory cache for used nonces to prevent replay attacks
+// In production, use Redis with TTL
+const usedNonces = new Set<string>();
+
 /**
  * Verify a request signature
  * @param payload - Request payload as JSON string
  * @param signature - Signature as hex string
  * @param publicKeyPem - Public key in PEM format
  * @param timestamp - Timestamp from request
+ * @param nonce - Random string from request
  * @param maxAge - Maximum age of request in milliseconds (default: 5 minutes)
  * @returns true if signature is valid and not expired, false otherwise
  */
@@ -116,6 +121,7 @@ export function verifyRequestSignature(
   signature: string,
   publicKeyPem: string,
   timestamp: number,
+  nonce?: string,
   maxAge: number = 5 * 60 * 1000
 ): boolean {
   // Check timestamp freshness
@@ -125,7 +131,23 @@ export function verifyRequestSignature(
     return false;
   }
 
+  // Check nonce for replay attack
+  if (nonce) {
+    const nonceKey = `${publicKeyPem}:${nonce}`;
+    if (usedNonces.has(nonceKey)) {
+      console.error("Nonce has already been used (replay attack detected)");
+      return false;
+    }
+    usedNonces.add(nonceKey);
+    
+    // Clean up old nonces (simple cleanup for prototype)
+    if (usedNonces.size > 10000) {
+      usedNonces.clear();
+    }
+  }
+
   // Verify signature
-  const message = `${payload}:${timestamp}`;
+  // Normalization: Concatenate parts with colons (must match client)
+  const message = [payload, timestamp.toString(), nonce].filter(Boolean).join(":");
   return verifySignature(message, signature, publicKeyPem);
 }
