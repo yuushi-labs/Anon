@@ -1,9 +1,21 @@
-import React, { createContext, useContext, useReducer, useCallback, ReactNode } from "react";
+import React, {
+  createContext,
+  useContext,
+  useReducer,
+  useCallback,
+  ReactNode,
+} from "react";
 import * as CryptoLib from "./crypto";
 import { trpc } from "./trpc";
-import { initializeNotifications, subscribeToNotifications } from "./notifications";
+import {
+  initializeNotifications,
+  subscribeToNotifications,
+} from "./notifications";
 import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
+import { disconnectWebSocket } from "./websocket";
+import { useQueryClient } from "@tanstack/react-query";
+import { setSessionToken, removeSessionToken } from "./_core/auth";
 
 export interface User {
   id: number;
@@ -66,7 +78,11 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 
 interface AuthContextType {
   state: AuthState;
-  register: (username: string, publicId: string, iconUrl?: string) => Promise<void>;
+  register: (
+    username: string,
+    publicId: string,
+    iconUrl?: string,
+  ) => Promise<void>;
   login: (publicId: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
@@ -77,8 +93,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, initialState);
   const router = useRouter();
+  const queryClient = useQueryClient();
   const registerMutation = trpc.dm.register.useMutation();
   const loginMutation = trpc.auth.login.useMutation();
+  const registerFCMMutation = trpc.dm.registerFCMToken.useMutation();
 
   // Initialize notifications and subscribe to events
   React.useEffect(() => {
@@ -104,14 +122,96 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.conversationId) {
           router.push({
             pathname: "/(tabs)",
-            params: { screen: "chat", conversationId: String(data.conversationId) },
+            params: {
+              screen: "chat",
+              conversationId: String(data.conversationId),
+            },
           });
         }
-      }
+      },
     );
 
     return unsubscribe;
   }, [router]);
+
+  // Initialize auth state on mount is moved below login definition
+
+  const registerFCMToken = useCallback(async () => {
+    try {
+      const fcmToken = await initializeNotifications();
+      if (fcmToken && state.user) {
+        console.log("FCM Token obtained:", fcmToken);
+        // Store FCM token locally
+        await SecureStore.setItemAsync("fcm_token", fcmToken);
+        // Send FCM token to backend
+        try {
+          await registerFCMMutation.mutateAsync({
+            userId: state.user.id,
+            fcmToken,
+          });
+          console.log("FCM token registered with backend");
+        } catch (backendError) {
+          console.error(
+            "Failed to register FCM token with backend:",
+            backendError,
+          );
+        }
+      }
+    } catch (error) {
+      console.error("Failed to register FCM token:", error);
+    }
+  }, [registerFCMMutation, state.user]);
+
+  const login = useCallback(
+    async (publicId: string) => {
+      try {
+        dispatch({ type: "SET_LOADING", payload: true });
+        dispatch({ type: "CLEAR_ERROR" });
+
+        const timestamp = Date.now();
+        const privateKey = await CryptoLib.getPrivateKey();
+
+        if (!privateKey) {
+          throw new Error("Private key not found. Please register first.");
+        }
+
+        // Sign the timestamp
+        const signature = await CryptoLib.createRequestSignature(
+          timestamp.toString(),
+          timestamp,
+        );
+
+        // Login with backend
+        const result = await loginMutation.mutateAsync({
+          publicId,
+          timestamp,
+          signature,
+        });
+
+        // Persist token for tRPC and other requests
+        await setSessionToken(result.token);
+
+        dispatch({
+          type: "SET_SIGNED_IN",
+          payload: {
+            user: result.user,
+            token: result.token,
+          },
+        });
+
+        // Register FCM token AFTER user state is set
+        await registerFCMToken();
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Login failed";
+        dispatch({ type: "SET_ERROR", payload: errorMessage });
+        throw error;
+      } finally {
+        dispatch({ type: "SET_LOADING", payload: false });
+      }
+    },
+    [loginMutation, registerFCMToken, dispatch],
+  );
 
   // Initialize auth state on mount
   React.useEffect(() => {
@@ -122,7 +222,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const publicId = await CryptoLib.getPublicId();
           if (publicId) {
             // Try to restore session
-            dispatch({ type: "SET_LOADING", payload: false });
+            await login(publicId);
+            // dispatch({ type: "SET_LOADING", payload: false }); // login function already handles setting loading state
           } else {
             dispatch({ type: "SET_LOADING", payload: false });
           }
@@ -136,7 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     initializeAuth();
-  }, []);
+  }, [login]);
 
   const register = useCallback(
     async (username: string, publicId: string, iconUrl?: string) => {
@@ -168,100 +269,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Registration failed";
+        // Rollback local keys if registration failed after saving them
+        await CryptoLib.deleteKeys();
         dispatch({ type: "SET_ERROR", payload: errorMessage });
         throw error;
       } finally {
         dispatch({ type: "SET_LOADING", payload: false });
       }
     },
-    [registerMutation]
+    [registerFCMToken, login, registerMutation, dispatch],
   );
-
-  const login = useCallback(
-    async (publicId: string) => {
-      try {
-        dispatch({ type: "SET_LOADING", payload: true });
-        dispatch({ type: "CLEAR_ERROR" });
-
-        const timestamp = Date.now();
-        const privateKey = await CryptoLib.getPrivateKey();
-
-        if (!privateKey) {
-          throw new Error("Private key not found. Please register first.");
-        }
-
-        // Sign the timestamp
-        const signature = await CryptoLib.createRequestSignature(
-          timestamp.toString(),
-          timestamp
-        );
-
-        // Login with backend
-        const result = await loginMutation.mutateAsync({
-          publicId,
-          timestamp,
-          signature,
-        });
-
-        // Register FCM token
-        await registerFCMToken();
-
-        dispatch({
-          type: "SET_SIGNED_IN",
-          payload: {
-            user: result.user,
-            token: result.token,
-          },
-        });
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Login failed";
-        dispatch({ type: "SET_ERROR", payload: errorMessage });
-        throw error;
-      } finally {
-        dispatch({ type: "SET_LOADING", payload: false });
-      }
-    },
-    [loginMutation]
-  );
-
-  const registerFCMToken = useCallback(async () => {
-    try {
-      const fcmToken = await initializeNotifications();
-      if (fcmToken && state.user) {
-        console.log("FCM Token obtained:", fcmToken);
-        // Store FCM token locally
-        await SecureStore.setItemAsync("fcm_token", fcmToken);
-        // Send FCM token to backend
-        try {
-          const registerFCMMutation = trpc.dm.registerFCMToken.useMutation();
-          await registerFCMMutation.mutateAsync({
-            userId: state.user.id,
-            fcmToken,
-          });
-          console.log("FCM token registered with backend");
-        } catch (backendError) {
-          console.error("Failed to register FCM token with backend:", backendError);
-        }
-      }
-    } catch (error) {
-      console.error("Failed to register FCM token:", error);
-    }
-  }, [state.user]);
 
   const logout = useCallback(async () => {
     try {
       dispatch({ type: "SET_LOADING", payload: true });
+
+      // 1. Disconnect WebSocket
+      disconnectWebSocket();
+
+      // 2. Clear React Query cache
+      // We use resetQueries to clear all data and refetch if needed, 
+      // or clear() to completely wipe the cache. 
+      // For logout, clear() or removing auth-dependent queries is safer.
+      queryClient.clear();
+
+      // 3. Delete local authentication data
       await CryptoLib.deleteKeys();
       await SecureStore.deleteItemAsync("fcm_token");
+      await removeSessionToken();
+
       dispatch({ type: "SET_SIGNED_OUT" });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Logout failed";
+      const errorMessage =
+        error instanceof Error ? error.message : "Logout failed";
       dispatch({ type: "SET_ERROR", payload: errorMessage });
       throw error;
     } finally {
       dispatch({ type: "SET_LOADING", payload: false });
     }
-  }, []);
+  }, [queryClient]);
 
   const clearError = useCallback(() => {
     dispatch({ type: "CLEAR_ERROR" });

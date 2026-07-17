@@ -36,7 +36,7 @@ export async function initializeNotifications() {
   }
 
   // Get FCM token
-  if (Device.isDevice) {
+  if (Device.isDevice && Platform.OS !== "web") {
     try {
       const projectId =
         Constants?.expoConfig?.extra?.eas?.projectId ||
