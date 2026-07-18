@@ -111,7 +111,8 @@ async function startServer() {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
-  server.listen(port, "0.0.0.0", () => {
+  // Listen on all interfaces (IPv4 and IPv6)
+  server.listen(port, "::", () => {
     console.log(`[api] server listening on port ${port}`);
   });
 }

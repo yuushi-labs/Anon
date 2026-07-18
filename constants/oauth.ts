@@ -47,12 +47,15 @@ export function getApiBaseUrl(): string {
     return API_BASE_URL.replace(/\/$/, "");
   }
 
-  // Fallback for native development: try .local domain first, then localhost
+  // Fallback for native development: return empty to allow callers to handle their own fallbacks
+  // or return a default that includes localhost as a secondary option.
   if (ReactNative.Platform.OS !== "web" && __DEV__) {
-    // If the user has a .local domain set in env, use it.
-    // Otherwise, we could try to guess, but it's safer to provide a few options.
-    // Use anon.local as the default development domain
-    return "http://anon.local:3000";
+    // We return empty here to allow the calling code (like chat.tsx) 
+    // to use its own fallback logic, or we can provide the preferred dev URL.
+    // To support both anon.local and localhost (via adb reverse), 
+    // it's best to let the user override via EXPO_PUBLIC_API_BASE_URL.
+    // If not set, we'll return empty to signal "use default local discovery".
+    return "";
   }
 
   if (ReactNative.Platform.OS !== "web" && !__DEV__ && !API_BASE_URL) {
