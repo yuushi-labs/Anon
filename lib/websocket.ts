@@ -150,12 +150,14 @@ export async function sendMessage(
 
 /**
  * Tell the server that the current user has read messages sent by the other participant.
+ * Uses a callback for acknowledgment to ensure reliability.
  */
 export function markMessagesAsRead(
   conversationId: number,
   messageIds: readonly number[],
+  onAck?: (readMessageIds: number[]) => void,
 ): boolean {
-  if (!socket) {
+  if (!socket || !socket.connected) {
     return false;
   }
 
@@ -166,12 +168,19 @@ export function markMessagesAsRead(
     return false;
   }
 
-  // Socket.IO queues the event until the active connection is ready, which
-  // covers the race between loading message history and joining a room.
-  socket.emit("mark_messages_read", {
-    conversationId,
-    messageIds: uniqueMessageIds,
-  });
+  // Socket.IO supports acknowledgments. The server will call the last argument if provided.
+  socket.emit(
+    "mark_messages_read",
+    {
+      conversationId,
+      messageIds: uniqueMessageIds,
+    },
+    (response: { success: boolean; messageIds?: number[] }) => {
+      if (response?.success && response.messageIds && onAck) {
+        onAck(response.messageIds);
+      }
+    },
+  );
   return true;
 }
 

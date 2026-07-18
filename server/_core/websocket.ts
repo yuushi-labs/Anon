@@ -8,7 +8,7 @@ import {
   blocks,
   messageReadReceipts,
 } from "../../drizzle/schema";
-import { eq, and, inArray, ne, or } from "drizzle-orm";
+import { eq, and, inArray, ne, or, sql } from "drizzle-orm";
 import { verifyRequestSignature } from "./crypto";
 import { verifyAppToken } from "./app-jwt";
 import { logger } from "./logger";
@@ -419,7 +419,7 @@ export function initializeWebSocket(httpServer: HTTPServer) {
      */
     (socket as any).on(
       "mark_messages_read",
-      async (payload: ReadReceiptPayload) => {
+      async (payload: ReadReceiptPayload, callback?: any) => {
         try {
           if (!socket.userId) {
             socket.emit("error", { message: "Not authenticated" });
@@ -497,6 +497,9 @@ export function initializeWebSocket(httpServer: HTTPServer) {
           }
 
           if (!reader[0].readReceiptsEnabled) {
+            if (typeof callback === "function") {
+              callback({ success: true, messageIds: [] });
+            }
             return;
           }
 
@@ -544,6 +547,9 @@ export function initializeWebSocket(httpServer: HTTPServer) {
               conversationId: payload.conversationId,
             });
             // Silently drop read receipts when blocked to match message delivery behavior
+            if (typeof callback === "function") {
+              callback({ success: true, messageIds: [] });
+            }
             return;
           }
 
@@ -562,6 +568,9 @@ export function initializeWebSocket(httpServer: HTTPServer) {
             (message) => message.id,
           );
           if (receivedMessageIds.length === 0) {
+            if (typeof callback === "function") {
+              callback({ success: true, messageIds: [] });
+            }
             return;
           }
 
@@ -580,34 +589,44 @@ export function initializeWebSocket(httpServer: HTTPServer) {
           const newlyReadMessageIds = receivedMessageIds.filter(
             (messageId) => !existingMessageIds.has(messageId),
           );
-          if (newlyReadMessageIds.length === 0) {
-            return;
+
+          if (newlyReadMessageIds.length > 0) {
+            const readAt = new Date();
+            await db
+              .insert(messageReadReceipts)
+              .values(
+                newlyReadMessageIds.map((messageId) => ({
+                  messageId,
+                  readerId: socket.userId!,
+                  readAt,
+                })),
+              )
+              .onDuplicateKeyUpdate({
+                set: {
+                  messageId: sql`messageId`, // No-op update to handle race conditions
+                },
+              });
+
+            io.to(`conversation:${payload.conversationId}`).emit(
+              "messages_read",
+              {
+                conversationId: payload.conversationId,
+                messageIds: newlyReadMessageIds,
+                readerId: socket.userId,
+                readAt,
+              },
+            );
+            logger.info("WebSocket messages marked as read", {
+              socketId: socket.id,
+              userId: socket.userId,
+              conversationId: payload.conversationId,
+              messageCount: newlyReadMessageIds.length,
+            });
           }
 
-          const readAt = new Date();
-          await db.insert(messageReadReceipts).values(
-            newlyReadMessageIds.map((messageId) => ({
-              messageId,
-              readerId: socket.userId!,
-              readAt,
-            })),
-          );
-
-          io.to(`conversation:${payload.conversationId}`).emit(
-            "messages_read",
-            {
-              conversationId: payload.conversationId,
-              messageIds: newlyReadMessageIds,
-              readerId: socket.userId,
-              readAt,
-            },
-          );
-          logger.info("WebSocket messages marked as read", {
-            socketId: socket.id,
-            userId: socket.userId,
-            conversationId: payload.conversationId,
-            messageCount: newlyReadMessageIds.length,
-          });
+          if (typeof callback === "function") {
+            callback({ success: true, messageIds: receivedMessageIds });
+          }
         } catch (error: any) {
           logger.error("WebSocket mark_messages_read error", {
             socketId: socket.id,

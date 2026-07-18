@@ -67,22 +67,29 @@ export default function ChatScreen() {
 
   const markIncomingMessagesAsRead = useCallback(
     (messagesToMark: readonly Message[]) => {
-      if (convId <= 0 || !authState.user) return;
+      const currentUser = authState.user;
+      if (convId <= 0 || !currentUser) return;
 
       const unreadIncomingMessageIds = messagesToMark
         .filter(
           (message) =>
-            message.senderId !== authState.user?.id &&
+            message.senderId !== currentUser.id &&
             !submittedReadMessageIds.current.has(message.id),
         )
         .map((message) => message.id);
       if (unreadIncomingMessageIds.length === 0) return;
 
-      if (WebSocket.markMessagesAsRead(convId, unreadIncomingMessageIds)) {
-        unreadIncomingMessageIds.forEach((messageId) => {
-          submittedReadMessageIds.current.add(messageId);
-        });
-      }
+      // Only add to submitted list AFTER the server acknowledges receipt.
+      // This ensures that if the server rejects (e.g. rate limiting), we can retry later.
+      WebSocket.markMessagesAsRead(
+        convId,
+        unreadIncomingMessageIds,
+        (acknowledgedIds) => {
+          acknowledgedIds.forEach((messageId) => {
+            submittedReadMessageIds.current.add(messageId);
+          });
+        },
+      );
     },
     [authState.user, convId],
   );
