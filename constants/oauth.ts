@@ -47,11 +47,15 @@ export function getApiBaseUrl(): string {
     return API_BASE_URL.replace(/\/$/, "");
   }
 
-  // Fallback for native development: assume adb reverse tcp:3000 tcp:3000 is used
-  // This allows connecting to the local server via http://localhost:3000
-  // Note: This only works for Android with adb reverse. iOS requires a LAN IP.
-  if (ReactNative.Platform.OS === "android" && __DEV__) {
-    return "http://localhost:3000";
+  // Fallback for native development: return empty to allow callers to handle their own fallbacks
+  // or return a default that includes localhost as a secondary option.
+  if (ReactNative.Platform.OS !== "web" && __DEV__) {
+    // We return empty here to allow the calling code (like chat.tsx) 
+    // to use its own fallback logic, or we can provide the preferred dev URL.
+    // To support both anon.local and localhost (via adb reverse), 
+    // it's best to let the user override via EXPO_PUBLIC_API_BASE_URL.
+    // If not set, we'll return empty to signal "use default local discovery".
+    return "";
   }
 
   if (ReactNative.Platform.OS !== "web" && !__DEV__ && !API_BASE_URL) {
