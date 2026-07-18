@@ -22,7 +22,11 @@ export function createTRPCClient() {
   return trpc.createClient({
     links: [
       httpBatchLink({
-        url: `${getApiBaseUrl()}/api/trpc`,
+        url: (() => {
+          const u = `${getApiBaseUrl()}/api/trpc`;
+          console.log("[tRPC] Connecting to:", u);
+          return u;
+        })(),
         // tRPC v11: transformer MUST be inside httpBatchLink, not at root
         transformer: superjson,
         async headers() {
