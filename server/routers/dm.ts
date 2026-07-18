@@ -256,7 +256,7 @@ export const dmRouter = router({
               : conv.initiatorId;
 
           const otherUser = await database
-            .select()
+            .select({ id: appUsers.id, publicId: appUsers.publicId, username: appUsers.username, iconUrl: appUsers.iconUrl, readReceiptsEnabled: appUsers.readReceiptsEnabled })
             .from(appUsers)
             .where(eq(appUsers.id, otherUserId))
             .limit(1);
@@ -329,27 +329,28 @@ export const dmRouter = router({
         .orderBy(desc(messages.createdAt))
         .limit(input.limit);
 
-      const receiptByMessageId = new Map<number, Date>();
-      if (msgs.length > 0) {
-        const receipts = await database
-          .select({
-            messageId: messageReadReceipts.messageId,
-            readAt: messageReadReceipts.readAt,
-          })
-          .from(messageReadReceipts)
-          .where(
-            and(
-              inArray(
-                messageReadReceipts.messageId,
-                msgs.map((message) => message.id),
-              ),
-              ne(messageReadReceipts.readerId, ctx.appUser.id),
-            ),
-          );
-        receipts.forEach((receipt) => {
-          receiptByMessageId.set(receipt.messageId, receipt.readAt);
-        });
-      }
+          const receiptByMessageId = new Map<number, Date>();
+          // Only fetch read receipts if both users have them enabled
+          if (ctx.appUser.readReceiptsEnabled && otherUser[0]?.readReceiptsEnabled && msgs.length > 0) {
+            const receipts = await database
+              .select({
+                messageId: messageReadReceipts.messageId,
+                readAt: messageReadReceipts.readAt,
+              })
+              .from(messageReadReceipts)
+              .where(
+                and(
+                  inArray(
+                    messageReadReceipts.messageId,
+                    msgs.map((message) => message.id),
+                  ),
+                  ne(messageReadReceipts.readerId, ctx.appUser.id),
+                ),
+              );
+            receipts.forEach((receipt) => {
+              receiptByMessageId.set(receipt.messageId, receipt.readAt);
+            });
+          }
 
       // Enrich messages with sender info (label and icon)
       const enrichedMsgs = await Promise.all(
