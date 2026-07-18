@@ -65,13 +65,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const setColorScheme = useCallback((scheme: ColorScheme) => {
     setColorSchemeState(scheme);
-    applyScheme(scheme);
     // Persist to AsyncStorage (works on both native and web)
     AsyncStorage.setItem(STORAGE_KEY_DARK_MODE, scheme).catch((error) => {
       console.error("[ThemeProvider] Failed to persist color scheme:", error);
     });
-  }, [applyScheme]);
+  }, []);
 
+  // Single source of truth for applying the theme: whenever colorScheme state changes
   useEffect(() => {
     applyScheme(colorScheme);
   }, [applyScheme, colorScheme]);
