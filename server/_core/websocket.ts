@@ -496,15 +496,29 @@ export function initializeWebSocket(httpServer: HTTPServer) {
             return;
           }
 
-          if (!reader[0].readReceiptsEnabled) {
-            if (typeof callback === "function") {
-              callback({ success: true, messageIds: [] });
-            }
+          if (conversation.length === 0) {
+            socket.emit("error", { message: "Conversation not found" });
             return;
           }
 
-          if (conversation.length === 0) {
-            socket.emit("error", { message: "Conversation not found" });
+          const otherParticipantId =
+            conversation[0].initiatorId === socket.userId
+              ? conversation[0].recipientId
+              : conversation[0].initiatorId;
+
+          const [otherParticipant] = await db
+            .select({ readReceiptsEnabled: appUsers.readReceiptsEnabled })
+            .from(appUsers)
+            .where(eq(appUsers.id, otherParticipantId))
+            .limit(1);
+
+          if (
+            !reader[0].readReceiptsEnabled ||
+            !otherParticipant?.readReceiptsEnabled
+          ) {
+            if (typeof callback === "function") {
+              callback({ success: true, messageIds: [] });
+            }
             return;
           }
 
