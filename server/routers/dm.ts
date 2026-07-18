@@ -415,13 +415,13 @@ export const dmRouter = router({
     }),
 
   /**
-   * Start a new conversation
+   * Report a message
    */
-  startConversation: protectedAppProcedure
+  reportMessage: protectedAppProcedure
     .input(
       z.object({
-        recipientPublicId: z.string(),
-        initialMessage: z.string().min(1).max(2000),
+        messageId: z.number(),
+        reason: z.string().min(1).max(1000),
       }),
     )
     .mutation(async ({ input, ctx }) => {

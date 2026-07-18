@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   RefreshControl,
   Alert,
-  Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
@@ -37,7 +36,7 @@ export default function DMListScreen() {
   const [isLoading, setIsLoading] = useState(true);
 
   const getConversationsQuery = trpc.dm.getConversations.useQuery(
-    { userId: authState.user?.id || 0 },
+    {},
     { enabled: !!authState.user?.id }
   );
 
@@ -56,16 +55,13 @@ export default function DMListScreen() {
 
   const handleConversationPress = (conversationId: number) => {
     router.push({
-      pathname: "/(tabs)",
-      params: { screen: "chat", conversationId },
+      pathname: "/(tabs)/chat",
+      params: { conversationId },
     });
   };
 
   const handleStartDM = () => {
-    router.push({
-      pathname: "/(tabs)",
-      params: { screen: "start-dm" },
-    });
+    router.push("/(tabs)/start-dm");
   };
 
   const renderConversationItem = ({ item }: { item: Conversation }) => (
@@ -73,28 +69,17 @@ export default function DMListScreen() {
       onPress={() => handleConversationPress(item.conversationId)}
       className="flex-row items-center px-4 py-3 border-b border-border active:bg-surface"
     >
-      {/* Avatar */}
+      {/* Avatar - always anonymous icon */}
       <View className="w-12 h-12 rounded-full bg-primary/20 items-center justify-center mr-3">
-        {item.isInitiator ? (
-          <Text className="text-xs font-bold text-primary">
-            {item.anonLabel.substring(0, 2)}
-          </Text>
-        ) : item.otherUser?.iconUrl ? (
-          <Image
-            source={{ uri: item.otherUser.iconUrl }}
-            className="w-full h-full rounded-full"
-          />
-        ) : (
-          <Text className="text-xs font-bold text-foreground">
-            {item.otherUser?.username.substring(0, 2).toUpperCase()}
-          </Text>
-        )}
+        <Text className="text-xs font-bold text-primary">
+          {item.anonLabel.substring(0, 2)}
+        </Text>
       </View>
 
       {/* Content */}
       <View className="flex-1">
         <Text className="text-base font-semibold text-foreground">
-          {item.isInitiator ? item.anonLabel : item.otherUser?.username}
+          {item.anonLabel}
         </Text>
         <Text className="text-sm text-muted mt-1" numberOfLines={1}>
           {item.lastMessage?.content || "メッセージなし"}
@@ -109,6 +94,7 @@ export default function DMListScreen() {
       </Text>
     </TouchableOpacity>
   );
+
 
   return (
     <ScreenContainer className="bg-background">

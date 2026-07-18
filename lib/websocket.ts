@@ -29,25 +29,34 @@ export function initializeWebSocket(
   onStopTyping: (userId: number) => void,
   onError: (error: string) => void
 ): Socket {
-  if (socket?.connected) {
-    return socket;
+  if (!socket) {
+    socket = io(serverUrl, {
+      auth: {
+        token,
+        publicId,
+      },
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5,
+    });
+
+    socket.on("connect", () => {
+      console.log("[WebSocket] Connected");
+    });
+
+    socket.on("disconnect", () => {
+      console.log("[WebSocket] Disconnected");
+    });
   }
 
-  socket = io(serverUrl, {
-    auth: {
-      token,
-      publicId,
-    },
-    reconnection: true,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000,
-    reconnectionAttempts: 5,
-  });
+  // Remove existing listeners to avoid duplicate or stale React state setters
+  socket.off("message");
+  socket.off("user_typing");
+  socket.off("user_stop_typing");
+  socket.off("error");
 
-  socket.on("connect", () => {
-    console.log("[WebSocket] Connected");
-  });
-
+  // Re-attach listeners with the latest callbacks
   socket.on("message", (message: Message) => {
     console.log("[WebSocket] Message received:", message);
     onMessage(message);
@@ -66,10 +75,6 @@ export function initializeWebSocket(
   socket.on("error", (error: any) => {
     console.error("[WebSocket] Error:", error);
     onError(error.message || "WebSocket error");
-  });
-
-  socket.on("disconnect", () => {
-    console.log("[WebSocket] Disconnected");
   });
 
   return socket;
@@ -117,23 +122,12 @@ export async function sendMessage(
     throw new Error("Socket not initialized");
   }
 
-  return new Promise((resolve, reject) => {
-    socket!.emit(
-      "send_message",
-      {
-        conversationId,
-        content,
-        signature,
-        timestamp,
-      },
-      (error?: any) => {
-        if (error) {
-          reject(new Error(error.message || "Failed to send message"));
-        } else {
-          resolve();
-        }
-      }
-    );
+  // Socket.IO emit is asynchronous but we don't need to block client UI waiting for it.
+  socket.emit("send_message", {
+    conversationId,
+    content,
+    signature,
+    timestamp,
   });
 }
 

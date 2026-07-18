@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,11 +8,51 @@ import {
   Alert,
 } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
+import { useThemeContext } from "@/lib/theme-provider";
+
+const STORAGE_KEY_NOTIFICATIONS = "settings_notifications";
+const STORAGE_KEY_READ_RECEIPTS = "settings_read_receipts";
+
+function getStorageItem(key: string, defaultValue: boolean): boolean {
+  if (typeof window === "undefined") return defaultValue;
+  const val = window.localStorage.getItem(key);
+  if (val === null) return defaultValue;
+  return val === "true";
+}
+
+function setStorageItem(key: string, value: boolean): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(key, String(value));
+}
 
 export default function SettingsScreen() {
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
-  const [readReceipts, setReadReceipts] = useState(true);
+  const { colorScheme, setColorScheme } = useThemeContext();
+  const [notificationsEnabled, setNotificationsEnabledState] = useState(true);
+  const [readReceipts, setReadReceiptsState] = useState(true);
+
+  // Load persisted settings on mount
+  useEffect(() => {
+    setNotificationsEnabledState(getStorageItem(STORAGE_KEY_NOTIFICATIONS, true));
+    setReadReceiptsState(getStorageItem(STORAGE_KEY_READ_RECEIPTS, true));
+  }, []);
+
+  const handleNotificationsChange = (val: boolean) => {
+    setNotificationsEnabledState(val);
+    setStorageItem(STORAGE_KEY_NOTIFICATIONS, val);
+  };
+
+  const handleReadReceiptsChange = (val: boolean) => {
+    setReadReceiptsState(val);
+    setStorageItem(STORAGE_KEY_READ_RECEIPTS, val);
+  };
+
+  const handleDarkModeChange = (val: boolean) => {
+    setColorScheme(val ? "dark" : "light");
+    // Persist to localStorage
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("settings_dark_mode", val ? "dark" : "light");
+    }
+  };
 
   const handleResetData = () => {
     Alert.alert(
@@ -59,7 +99,7 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={notificationsEnabled}
-                onValueChange={setNotificationsEnabled}
+                onValueChange={handleNotificationsChange}
               />
             </View>
 
@@ -74,7 +114,7 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={readReceipts}
-                onValueChange={setReadReceipts}
+                onValueChange={handleReadReceiptsChange}
               />
             </View>
           </View>
@@ -95,8 +135,8 @@ export default function SettingsScreen() {
                 </Text>
               </View>
               <Switch
-                value={darkMode}
-                onValueChange={setDarkMode}
+                value={colorScheme === "dark"}
+                onValueChange={handleDarkModeChange}
               />
             </View>
           </View>

@@ -147,7 +147,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Send FCM token to backend
         try {
           await registerFCMMutation.mutateAsync({
-            userId: state.user.id,
             fcmToken,
           });
           console.log("FCM token registered with backend");

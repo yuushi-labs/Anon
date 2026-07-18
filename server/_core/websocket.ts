@@ -338,6 +338,7 @@ export function initializeWebSocket(httpServer: HTTPServer) {
           payload.signature,
           publicKey,
           payload.timestamp,
+          undefined,
           5 * 60 * 1000, // 5 minute expiry
         );
 

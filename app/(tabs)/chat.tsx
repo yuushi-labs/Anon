@@ -14,6 +14,8 @@ import { useAuth } from "@/lib/auth-context";
 import { trpc } from "@/lib/trpc";
 import * as WebSocket from "@/lib/websocket";
 import * as CryptoLib from "@/lib/crypto";
+import { getApiBaseUrl } from "@/constants/oauth";
+import { getSessionToken } from "@/lib/_core/auth";
 
 interface Message {
   id: number;
@@ -23,6 +25,26 @@ interface Message {
   senderIcon: string | null;
   content: string;
   createdAt: Date;
+}
+
+function formatMessageTime(createdAt: any): string {
+  try {
+    if (!createdAt) throw new Error("empty date");
+    const date = new Date(createdAt);
+    if (isNaN(date.getTime())) {
+      throw new Error("invalid date");
+    }
+    return date.toLocaleTimeString("ja-JP", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch (e) {
+    // Fallback to current time if parsing fails
+    return new Date().toLocaleTimeString("ja-JP", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
 }
 
 export default function ChatScreen() {
@@ -42,49 +64,62 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (getMessagesQuery.data) {
-      setMessages(getMessagesQuery.data as any);
+      // DB returns messages in descending order, reverse to display oldest first
+      setMessages([...(getMessagesQuery.data as any)].reverse());
       setIsLoading(false);
-      flatListRef.current?.scrollToEnd({ animated: true });
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
     }
   }, [getMessagesQuery.data]);
 
   useEffect(() => {
-    if (convId > 0 && authState.token) {
-      // Initialize WebSocket
-      const handleMessage = (msg: Message) => {
-        setMessages((prev) => [...prev, msg]);
-        flatListRef.current?.scrollToEnd({ animated: true });
+    if (convId > 0 && authState.user) {
+      const setup = async () => {
+        const token = await getSessionToken();
+        // WebSocket URL: replace http with ws, keep same host
+        const apiBase = getApiBaseUrl() || `${typeof window !== "undefined" ? window.location.protocol : "http:"}//${typeof window !== "undefined" ? window.location.hostname : "localhost"}:3000`;
+        const wsUrl = apiBase.replace(/^http/, "ws");
+
+        const handleMessage = (msg: Message) => {
+          setMessages((prev) => {
+            // Deduplicate by id
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+        };
+
+        const handleTyping = (user: any) => {
+          console.log("User typing:", user);
+        };
+
+        const handleStopTyping = (userId: number) => {
+          console.log("User stopped typing:", userId);
+        };
+
+        const handleError = (error: string) => {
+          console.error("WebSocket error:", error);
+        };
+
+        WebSocket.initializeWebSocket(
+          wsUrl,
+          token || "",
+          authState.user?.publicId || "",
+          handleMessage,
+          handleTyping,
+          handleStopTyping,
+          handleError
+        );
+
+        WebSocket.joinConversation(convId);
       };
 
-      const handleTyping = (user: any) => {
-        console.log("User typing:", user);
-      };
-
-      const handleStopTyping = (userId: number) => {
-        console.log("User stopped typing:", userId);
-      };
-
-      const handleError = (error: string) => {
-        console.error("WebSocket error:", error);
-      };
-
-      WebSocket.initializeWebSocket(
-        "http://localhost:3000", // Replace with actual server URL
-        authState.token,
-        authState.user?.publicId || "",
-        handleMessage,
-        handleTyping,
-        handleStopTyping,
-        handleError
-      );
-
-      WebSocket.joinConversation(convId);
+      setup();
 
       return () => {
         WebSocket.leaveConversation(convId);
       };
     }
-  }, [convId, authState.token, authState.user?.publicId]);
+  }, [convId, authState.user]);
 
   const handleSendMessage = async () => {
     if (!inputText.trim() || !authState.user) return;
@@ -137,10 +172,7 @@ export default function ChatScreen() {
               isOwn ? "text-white/70" : "text-muted"
             }`}
           >
-            {new Date(item.createdAt).toLocaleTimeString("ja-JP", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+            {formatMessageTime(item.createdAt)}
           </Text>
         </View>
       </View>

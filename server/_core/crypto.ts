@@ -59,26 +59,9 @@ export function verifySignature(
   publicKeyPem: string
 ): boolean {
   try {
-    // Note: The client currently uses a simulated signature (SHA256 hash with private key)
-    // because Expo doesn't have native ECDSA support out of the box.
-    // In a full production environment, this should use ECDSA P-256.
-    
-    // For now, we will verify the signature if it matches either a real ECDSA signature
-    // or the simulated hash-based signature for compatibility during transition.
-    
-    // 1. Try ECDSA verification
     const verify = createVerify("sha256");
     verify.update(message);
-    const isEcdsaValid = verify.verify(publicKeyPem, Buffer.from(signature, "hex"));
-    if (isEcdsaValid) return true;
-
-    // 2. Compatibility fallback: If we were to use the simulated hash, 
-    // we would need the private key which we don't have on the server.
-    // However, the client's simulated public key is a hash of the private key.
-    // This is not a secure long-term solution but allows the prototype to function.
-    
-    console.warn("ECDSA verification failed, and fallback is not secure. Check client crypto implementation.");
-    return false;
+    return verify.verify(publicKeyPem, Buffer.from(signature, "hex"));
   } catch (error) {
     console.error("Signature verification failed:", error);
     return false;
