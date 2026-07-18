@@ -36,7 +36,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         if (!isMounted) return;
         if (saved === "dark" || saved === "light") {
           setColorSchemeState(saved);
-          applyScheme(saved);
+          // applyScheme is handled by the useEffect watching [colorScheme]
         }
       } catch (error) {
         console.error("[ThemeProvider] Failed to load persisted color scheme:", error);
@@ -46,7 +46,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return () => {
       isMounted = false;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const applyScheme = useCallback((scheme: ColorScheme) => {
