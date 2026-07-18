@@ -322,6 +322,17 @@ export const dmRouter = router({
         });
       }
 
+      const otherUserId =
+        conversation[0].initiatorId === ctx.appUser.id
+          ? conversation[0].recipientId
+          : conversation[0].initiatorId;
+
+      const otherUser = await database
+        .select({ readReceiptsEnabled: appUsers.readReceiptsEnabled })
+        .from(appUsers)
+        .where(eq(appUsers.id, otherUserId))
+        .limit(1);
+
       const msgs = await database
         .select()
         .from(messages)
@@ -329,9 +340,13 @@ export const dmRouter = router({
         .orderBy(desc(messages.createdAt))
         .limit(input.limit);
 
-          const receiptByMessageId = new Map<number, Date>();
-          // Only fetch read receipts if both users have them enabled
-          if (ctx.appUser.readReceiptsEnabled && otherUser[0]?.readReceiptsEnabled && msgs.length > 0) {
+      const receiptByMessageId = new Map<number, Date>();
+      // Only fetch read receipts if both users have them enabled
+      if (
+        ctx.appUser.readReceiptsEnabled &&
+        otherUser[0]?.readReceiptsEnabled &&
+        msgs.length > 0
+      ) {
             const receipts = await database
               .select({
                 messageId: messageReadReceipts.messageId,
