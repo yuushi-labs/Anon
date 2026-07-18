@@ -28,17 +28,21 @@ export default function SettingsScreen() {
     let isMounted = true;
 
     const loadLocalSettings = async () => {
-      const [storedNotifications, storedReadReceipts] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEY_NOTIFICATIONS),
-        AsyncStorage.getItem(STORAGE_KEY_READ_RECEIPTS),
-      ]);
-      if (!isMounted) return;
+      try {
+        const [storedNotifications, storedReadReceipts] = await Promise.all([
+          AsyncStorage.getItem(STORAGE_KEY_NOTIFICATIONS),
+          AsyncStorage.getItem(STORAGE_KEY_READ_RECEIPTS),
+        ]);
+        if (!isMounted) return;
 
-      if (storedNotifications !== null) {
-        setNotificationsEnabledState(storedNotifications === "true");
-      }
-      if (storedReadReceipts !== null) {
-        setReadReceiptsState(storedReadReceipts === "true");
+        if (storedNotifications !== null) {
+          setNotificationsEnabledState(storedNotifications === "true");
+        }
+        if (storedReadReceipts !== null) {
+          setReadReceiptsState(storedReadReceipts === "true");
+        }
+      } catch (error) {
+        console.error("[Settings] Failed to load local settings:", error);
       }
     };
 
@@ -55,29 +59,48 @@ export default function SettingsScreen() {
     if (typeof enabled !== "boolean") return;
 
     setReadReceiptsState(enabled);
-    void AsyncStorage.setItem(STORAGE_KEY_READ_RECEIPTS, String(enabled));
+    AsyncStorage.setItem(STORAGE_KEY_READ_RECEIPTS, String(enabled)).catch(
+      (error) => {
+        console.error(
+          "[Settings] Failed to persist read receipts setting from server:",
+          error,
+        );
+      },
+    );
   }, [readReceiptSettingsQuery.data?.readReceiptsEnabled]);
 
   const handleNotificationsChange = async (val: boolean) => {
     setNotificationsEnabledState(val);
-    await AsyncStorage.setItem(STORAGE_KEY_NOTIFICATIONS, String(val));
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY_NOTIFICATIONS, String(val));
+    } catch (error) {
+      console.error("[Settings] Failed to save notifications setting:", error);
+    }
   };
 
   const handleReadReceiptsChange = async (val: boolean) => {
     const previousValue = readReceipts;
     setReadReceiptsState(val);
-    await AsyncStorage.setItem(STORAGE_KEY_READ_RECEIPTS, String(val));
 
     try {
+      // Try local storage first
+      await AsyncStorage.setItem(STORAGE_KEY_READ_RECEIPTS, String(val));
+      // Then sync with server
       await updateReadReceiptSettingsMutation.mutateAsync({
         readReceiptsEnabled: val,
       });
     } catch (error) {
+      // Revert UI and local storage on failure
       setReadReceiptsState(previousValue);
-      await AsyncStorage.setItem(
-        STORAGE_KEY_READ_RECEIPTS,
-        String(previousValue),
-      );
+      try {
+        await AsyncStorage.setItem(
+          STORAGE_KEY_READ_RECEIPTS,
+          String(previousValue),
+        );
+      } catch (innerError) {
+        console.error("[Settings] Failed to revert local setting:", innerError);
+      }
+
       Alert.alert(
         "設定を保存できませんでした",
         error instanceof Error

@@ -520,6 +520,33 @@ export function initializeWebSocket(httpServer: HTTPServer) {
             return;
           }
 
+          const blocked = await db
+            .select()
+            .from(blocks)
+            .where(
+              or(
+                and(
+                  eq(blocks.blockerId, conversation[0].initiatorId),
+                  eq(blocks.blockedId, conversation[0].recipientId),
+                ),
+                and(
+                  eq(blocks.blockerId, conversation[0].recipientId),
+                  eq(blocks.blockedId, conversation[0].initiatorId),
+                ),
+              ),
+            )
+            .limit(1);
+
+          if (blocked.length > 0) {
+            logger.info("WebSocket read receipt blocked by user settings", {
+              socketId: socket.id,
+              userId: socket.userId,
+              conversationId: payload.conversationId,
+            });
+            // Silently drop read receipts when blocked to match message delivery behavior
+            return;
+          }
+
           // A user can only mark messages written by the other participant as read.
           const receivedMessages = await db
             .select({ id: messages.id })
