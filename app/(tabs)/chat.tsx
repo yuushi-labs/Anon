@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -24,22 +24,24 @@ interface Message {
   senderLabel: string;
   senderIcon: string | null;
   content: string;
-  createdAt: Date;
+  createdAt: Date | string;
+  readAt?: Date | string | null;
 }
 
-function formatMessageTime(createdAt: any): string {
+function formatMessageTime(
+  createdAt: Date | string | null | undefined,
+): string {
   try {
     if (!createdAt) throw new Error("empty date");
     const date = new Date(createdAt);
-    if (isNaN(date.getTime())) {
+    if (Number.isNaN(date.getTime())) {
       throw new Error("invalid date");
     }
     return date.toLocaleTimeString("ja-JP", {
       hour: "2-digit",
       minute: "2-digit",
     });
-  } catch (e) {
-    // Fallback to current time if parsing fails
+  } catch {
     return new Date().toLocaleTimeString("ja-JP", {
       hour: "2-digit",
       minute: "2-digit",
@@ -52,74 +54,139 @@ export default function ChatScreen() {
   const { state: authState } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
+  const [isSocketInitialized, setIsSocketInitialized] = useState(false);
+  const flatListRef = useRef<FlatList<Message>>(null);
+  const submittedReadMessageIds = useRef(new Set<number>());
 
-  const convId = parseInt(conversationId || "0");
+  const convId = Number.parseInt(conversationId || "0", 10);
   const getMessagesQuery = trpc.dm.getMessages.useQuery(
     { conversationId: convId },
-    { enabled: convId > 0 }
+    { enabled: convId > 0 },
+  );
+
+  const markIncomingMessagesAsRead = useCallback(
+    (messagesToMark: readonly Message[]) => {
+      if (convId <= 0 || !authState.user) return;
+
+      const unreadIncomingMessageIds = messagesToMark
+        .filter(
+          (message) =>
+            message.senderId !== authState.user?.id &&
+            !submittedReadMessageIds.current.has(message.id),
+        )
+        .map((message) => message.id);
+      if (unreadIncomingMessageIds.length === 0) return;
+
+      if (WebSocket.markMessagesAsRead(convId, unreadIncomingMessageIds)) {
+        unreadIncomingMessageIds.forEach((messageId) => {
+          submittedReadMessageIds.current.add(messageId);
+        });
+      }
+    },
+    [authState.user, convId],
   );
 
   useEffect(() => {
-    if (getMessagesQuery.data) {
-      // DB returns messages in descending order, reverse to display oldest first
-      setMessages([...(getMessagesQuery.data as any)].reverse());
-      setIsLoading(false);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
-    }
+    submittedReadMessageIds.current.clear();
+  }, [convId]);
+
+  useEffect(() => {
+    if (!getMessagesQuery.data) return;
+
+    // The API returns messages in descending order; show them oldest first.
+    setMessages([...(getMessagesQuery.data as Message[])].reverse());
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
   }, [getMessagesQuery.data]);
 
   useEffect(() => {
-    if (convId > 0 && authState.user) {
-      const setup = async () => {
-        const token = await getSessionToken();
-        // WebSocket URL: replace http with ws, keep same host
-        const apiBase = getApiBaseUrl() || `${typeof window !== "undefined" ? window.location.protocol : "http:"}//${typeof window !== "undefined" ? window.location.hostname : "localhost"}:3000`;
-        const wsUrl = apiBase.replace(/^http/, "ws");
+    if (!isSocketInitialized) return;
+    markIncomingMessagesAsRead(messages);
+  }, [isSocketInitialized, markIncomingMessagesAsRead, messages]);
 
-        const handleMessage = (msg: Message) => {
-          setMessages((prev) => {
-            // Deduplicate by id
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            return [...prev, msg];
-          });
-          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-        };
+  useEffect(() => {
+    const currentUser = authState.user;
+    if (convId <= 0 || !currentUser) return;
 
-        const handleTyping = (user: any) => {
-          console.log("User typing:", user);
-        };
+    let isActive = true;
+    const setup = async () => {
+      const token = await getSessionToken();
+      const apiBase =
+        getApiBaseUrl() ||
+        `${typeof window !== "undefined" ? window.location.protocol : "http:"}//${
+          typeof window !== "undefined" ? window.location.hostname : "localhost"
+        }:3000`;
+      const wsUrl = apiBase.replace(/^http/, "ws");
 
-        const handleStopTyping = (userId: number) => {
-          console.log("User stopped typing:", userId);
-        };
-
-        const handleError = (error: string) => {
-          console.error("WebSocket error:", error);
-        };
-
-        WebSocket.initializeWebSocket(
-          wsUrl,
-          token || "",
-          authState.user?.publicId || "",
-          handleMessage,
-          handleTyping,
-          handleStopTyping,
-          handleError
+      const handleMessage = (message: Message) => {
+        setMessages((previousMessages) => {
+          if (
+            previousMessages.some(
+              (existingMessage) => existingMessage.id === message.id,
+            )
+          ) {
+            return previousMessages;
+          }
+          return [...previousMessages, message];
+        });
+        setTimeout(
+          () => flatListRef.current?.scrollToEnd({ animated: true }),
+          50,
         );
-
-        WebSocket.joinConversation(convId);
       };
 
-      setup();
+      const handleMessagesRead = (receipt: WebSocket.ReadReceipt) => {
+        if (
+          receipt.conversationId !== convId ||
+          receipt.readerId === currentUser.id
+        ) {
+          return;
+        }
 
-      return () => {
-        WebSocket.leaveConversation(convId);
+        const readMessageIds = new Set(receipt.messageIds);
+        setMessages((previousMessages) =>
+          previousMessages.map((message) =>
+            message.senderId === currentUser.id &&
+            readMessageIds.has(message.id)
+              ? { ...message, readAt: receipt.readAt }
+              : message,
+          ),
+        );
       };
-    }
-  }, [convId, authState.user]);
+
+      const handleTyping = (user: WebSocket.TypingUser) => {
+        console.log("User typing:", user);
+      };
+      const handleStopTyping = (userId: number) => {
+        console.log("User stopped typing:", userId);
+      };
+      const handleError = (error: string) => {
+        console.error("WebSocket error:", error);
+      };
+
+      WebSocket.initializeWebSocket(
+        wsUrl,
+        token || "",
+        currentUser.publicId,
+        handleMessage,
+        handleMessagesRead,
+        handleTyping,
+        handleStopTyping,
+        handleError,
+      );
+      WebSocket.joinConversation(convId);
+      if (isActive) {
+        setIsSocketInitialized(true);
+      }
+    };
+
+    void setup();
+    return () => {
+      isActive = false;
+      setIsSocketInitialized(false);
+      WebSocket.leaveConversation(convId);
+    };
+  }, [authState.user, convId]);
 
   const handleSendMessage = async () => {
     if (!inputText.trim() || !authState.user) return;
@@ -128,16 +195,13 @@ export default function ChatScreen() {
       setIsSending(true);
       const timestamp = Date.now();
       const privateKey = await CryptoLib.getPrivateKey();
-
       if (!privateKey) {
         throw new Error("Private key not found");
       }
-
       const signature = await CryptoLib.createRequestSignature(
         JSON.stringify({ conversationId: convId, content: inputText }),
-        timestamp
+        timestamp,
       );
-
       await WebSocket.sendMessage(convId, inputText, signature, timestamp);
       setInputText("");
     } catch (error) {
@@ -149,7 +213,6 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isOwn = item.senderId === authState.user?.id;
-
     return (
       <View
         className={`flex-row px-4 py-2 ${isOwn ? "justify-end" : "justify-start"}`}
@@ -164,16 +227,21 @@ export default function ChatScreen() {
               {item.senderLabel}
             </Text>
           )}
-          <Text className={`text-sm ${isOwn ? "text-white" : "text-foreground"}`}>
+          <Text
+            className={`text-sm ${isOwn ? "text-white" : "text-foreground"}`}
+          >
             {item.content}
           </Text>
-          <Text
-            className={`text-xs mt-1 ${
-              isOwn ? "text-white/70" : "text-muted"
-            }`}
-          >
-            {formatMessageTime(item.createdAt)}
-          </Text>
+          <View className="flex-row items-center justify-end gap-2 mt-1">
+            <Text
+              className={`text-xs ${isOwn ? "text-white/70" : "text-muted"}`}
+            >
+              {formatMessageTime(item.createdAt)}
+            </Text>
+            {isOwn && item.readAt && (
+              <Text className="text-xs text-white/70">既読</Text>
+            )}
+          </View>
         </View>
       </View>
     );
@@ -185,17 +253,14 @@ export default function ChatScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1"
       >
-        {/* Messages List */}
         <FlatList
           ref={flatListRef}
           data={messages}
           renderItem={renderMessage}
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={{ paddingVertical: 8 }}
-          scrollEnabled={true}
+          scrollEnabled
         />
-
-        {/* Input Area */}
         <View className="border-t border-border px-4 py-3 flex-row items-center gap-2">
           <TextInput
             className="flex-1 bg-surface border border-border rounded-full px-4 py-2 text-foreground"

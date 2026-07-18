@@ -7,43 +7,84 @@ import {
   Switch,
   Alert,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ScreenContainer } from "@/components/screen-container";
 import { useThemeContext } from "@/lib/theme-provider";
+import { trpc } from "@/lib/trpc";
 
 const STORAGE_KEY_NOTIFICATIONS = "settings_notifications";
 const STORAGE_KEY_READ_RECEIPTS = "settings_read_receipts";
-
-function getStorageItem(key: string, defaultValue: boolean): boolean {
-  if (typeof window === "undefined") return defaultValue;
-  const val = window.localStorage.getItem(key);
-  if (val === null) return defaultValue;
-  return val === "true";
-}
-
-function setStorageItem(key: string, value: boolean): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(key, String(value));
-}
 
 export default function SettingsScreen() {
   const { colorScheme, setColorScheme } = useThemeContext();
   const [notificationsEnabled, setNotificationsEnabledState] = useState(true);
   const [readReceipts, setReadReceiptsState] = useState(true);
+  const readReceiptSettingsQuery = trpc.dm.getReadReceiptSettings.useQuery();
+  const updateReadReceiptSettingsMutation =
+    trpc.dm.updateReadReceiptSettings.useMutation();
 
-  // Load persisted settings on mount
+  // AsyncStorage is supported by both Expo Web and native builds.
   useEffect(() => {
-    setNotificationsEnabledState(getStorageItem(STORAGE_KEY_NOTIFICATIONS, true));
-    setReadReceiptsState(getStorageItem(STORAGE_KEY_READ_RECEIPTS, true));
+    let isMounted = true;
+
+    const loadLocalSettings = async () => {
+      const [storedNotifications, storedReadReceipts] = await Promise.all([
+        AsyncStorage.getItem(STORAGE_KEY_NOTIFICATIONS),
+        AsyncStorage.getItem(STORAGE_KEY_READ_RECEIPTS),
+      ]);
+      if (!isMounted) return;
+
+      if (storedNotifications !== null) {
+        setNotificationsEnabledState(storedNotifications === "true");
+      }
+      if (storedReadReceipts !== null) {
+        setReadReceiptsState(storedReadReceipts === "true");
+      }
+    };
+
+    void loadLocalSettings();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const handleNotificationsChange = (val: boolean) => {
+  // The server is the source of truth because read receipts may be sent from
+  // either the Web client or a native client for the same account.
+  useEffect(() => {
+    const enabled = readReceiptSettingsQuery.data?.readReceiptsEnabled;
+    if (typeof enabled !== "boolean") return;
+
+    setReadReceiptsState(enabled);
+    void AsyncStorage.setItem(STORAGE_KEY_READ_RECEIPTS, String(enabled));
+  }, [readReceiptSettingsQuery.data?.readReceiptsEnabled]);
+
+  const handleNotificationsChange = async (val: boolean) => {
     setNotificationsEnabledState(val);
-    setStorageItem(STORAGE_KEY_NOTIFICATIONS, val);
+    await AsyncStorage.setItem(STORAGE_KEY_NOTIFICATIONS, String(val));
   };
 
-  const handleReadReceiptsChange = (val: boolean) => {
+  const handleReadReceiptsChange = async (val: boolean) => {
+    const previousValue = readReceipts;
     setReadReceiptsState(val);
-    setStorageItem(STORAGE_KEY_READ_RECEIPTS, val);
+    await AsyncStorage.setItem(STORAGE_KEY_READ_RECEIPTS, String(val));
+
+    try {
+      await updateReadReceiptSettingsMutation.mutateAsync({
+        readReceiptsEnabled: val,
+      });
+    } catch (error) {
+      setReadReceiptsState(previousValue);
+      await AsyncStorage.setItem(
+        STORAGE_KEY_READ_RECEIPTS,
+        String(previousValue),
+      );
+      Alert.alert(
+        "設定を保存できませんでした",
+        error instanceof Error
+          ? error.message
+          : "既読表示の設定を保存できませんでした。",
+      );
+    }
   };
 
   const handleDarkModeChange = (val: boolean) => {
@@ -67,7 +108,7 @@ export default function SettingsScreen() {
             Alert.alert("完了", "データがリセットされました");
           },
         },
-      ]
+      ],
     );
   };
 
@@ -77,16 +118,12 @@ export default function SettingsScreen() {
         <View className="px-6 py-8 gap-6">
           {/* Header */}
           <View>
-            <Text className="text-2xl font-bold text-foreground">
-              設定
-            </Text>
+            <Text className="text-2xl font-bold text-foreground">設定</Text>
           </View>
 
           {/* Notifications */}
           <View className="gap-3">
-            <Text className="text-sm font-semibold text-foreground">
-              通知
-            </Text>
+            <Text className="text-sm font-semibold text-foreground">通知</Text>
 
             <View className="bg-surface rounded-lg p-4 border border-border flex-row items-center justify-between">
               <View className="flex-1">
@@ -115,15 +152,14 @@ export default function SettingsScreen() {
               <Switch
                 value={readReceipts}
                 onValueChange={handleReadReceiptsChange}
+                disabled={updateReadReceiptSettingsMutation.isPending}
               />
             </View>
           </View>
 
           {/* Display */}
           <View className="gap-3">
-            <Text className="text-sm font-semibold text-foreground">
-              表示
-            </Text>
+            <Text className="text-sm font-semibold text-foreground">表示</Text>
 
             <View className="bg-surface rounded-lg p-4 border border-border flex-row items-center justify-between">
               <View className="flex-1">
@@ -183,9 +219,7 @@ export default function SettingsScreen() {
                 <Text className="text-base font-semibold text-foreground">
                   バージョン
                 </Text>
-                <Text className="text-xs text-muted mt-1">
-                  v1.0.0
-                </Text>
+                <Text className="text-xs text-muted mt-1">v1.0.0</Text>
               </View>
             </TouchableOpacity>
 
@@ -210,9 +244,7 @@ export default function SettingsScreen() {
 
           {/* Danger Zone */}
           <View className="gap-3">
-            <Text className="text-sm font-semibold text-error">
-              危険ゾーン
-            </Text>
+            <Text className="text-sm font-semibold text-error">危険ゾーン</Text>
 
             <TouchableOpacity
               onPress={handleResetData}

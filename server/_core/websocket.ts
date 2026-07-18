@@ -6,8 +6,9 @@ import {
   conversations,
   appUsers,
   blocks,
+  messageReadReceipts,
 } from "../../drizzle/schema";
-import { eq, and, or } from "drizzle-orm";
+import { eq, and, inArray, ne, or } from "drizzle-orm";
 import { verifyRequestSignature } from "./crypto";
 import { verifyAppToken } from "./app-jwt";
 import { logger } from "./logger";
@@ -28,6 +29,11 @@ interface MessagePayload {
   content: string;
   timestamp: number;
   signature: string;
+}
+
+interface ReadReceiptPayload {
+  conversationId: number;
+  messageIds: number[];
 }
 
 async function isConversationParticipant(
@@ -56,8 +62,14 @@ const userConnections = new Map<number, Set<string>>();
 const eventLimits = new Map<string, { count: number; lastReset: number }>();
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 const MAX_MESSAGES_PER_MINUTE = 30;
+const MAX_READ_RECEIPTS_PER_MINUTE = 120;
+const MAX_READ_RECEIPTS_PER_EVENT = 100;
 
-function checkRateLimit(socketId: string, event: string, limit: number): boolean {
+function checkRateLimit(
+  socketId: string,
+  event: string,
+  limit: number,
+): boolean {
   const key = `${socketId}:${event}`;
   const now = Date.now();
   const record = eventLimits.get(key) || { count: 0, lastReset: now };
@@ -224,12 +236,16 @@ export function initializeWebSocket(httpServer: HTTPServer) {
     (socket as any).on("send_message", async (payload: MessagePayload) => {
       try {
         // Rate limiting
-        if (!checkRateLimit(socket.id, "send_message", MAX_MESSAGES_PER_MINUTE)) {
+        if (
+          !checkRateLimit(socket.id, "send_message", MAX_MESSAGES_PER_MINUTE)
+        ) {
           logger.warn("WebSocket message rate limit exceeded", {
             socketId: socket.id,
             userId: socket.userId,
           });
-          socket.emit("error", { message: "Too many messages. Please slow down." });
+          socket.emit("error", {
+            message: "Too many messages. Please slow down.",
+          });
           return;
         }
 
@@ -395,6 +411,186 @@ export function initializeWebSocket(httpServer: HTTPServer) {
         socket.emit("error", { message: "Failed to send message" });
       }
     });
+
+    /**
+     * Record messages as read and notify the other conversation participant.
+     * The server performs all authorization and preference checks so that clients
+     * cannot forge receipts for messages outside their conversations.
+     */
+    (socket as any).on(
+      "mark_messages_read",
+      async (payload: ReadReceiptPayload) => {
+        try {
+          if (!socket.userId) {
+            socket.emit("error", { message: "Not authenticated" });
+            return;
+          }
+
+          if (
+            !checkRateLimit(
+              socket.id,
+              "mark_messages_read",
+              MAX_READ_RECEIPTS_PER_MINUTE,
+            )
+          ) {
+            logger.warn("WebSocket read receipt rate limit exceeded", {
+              socketId: socket.id,
+              userId: socket.userId,
+            });
+            socket.emit("error", {
+              message: "Too many read receipt updates. Please slow down.",
+            });
+            return;
+          }
+
+          if (
+            !payload ||
+            !Number.isSafeInteger(payload.conversationId) ||
+            !Array.isArray(payload.messageIds)
+          ) {
+            socket.emit("error", { message: "Invalid read receipt payload" });
+            return;
+          }
+
+          const messageIds = [...new Set(payload.messageIds)].filter(
+            (messageId) => Number.isSafeInteger(messageId) && messageId > 0,
+          );
+          if (
+            messageIds.length === 0 ||
+            messageIds.length > MAX_READ_RECEIPTS_PER_EVENT
+          ) {
+            socket.emit("error", {
+              message: "Invalid read receipt message IDs",
+            });
+            return;
+          }
+
+          const db = await getDb();
+          if (!db) {
+            logger.error(
+              "WebSocket read receipt failed: Database unavailable",
+              {
+                socketId: socket.id,
+                userId: socket.userId,
+              },
+            );
+            socket.emit("error", { message: "Database unavailable" });
+            return;
+          }
+
+          const [reader, conversation] = await Promise.all([
+            db
+              .select({ readReceiptsEnabled: appUsers.readReceiptsEnabled })
+              .from(appUsers)
+              .where(eq(appUsers.id, socket.userId))
+              .limit(1),
+            db
+              .select()
+              .from(conversations)
+              .where(eq(conversations.id, payload.conversationId))
+              .limit(1),
+          ]);
+
+          if (reader.length === 0) {
+            socket.emit("error", { message: "User not found" });
+            return;
+          }
+
+          if (!reader[0].readReceiptsEnabled) {
+            return;
+          }
+
+          if (conversation.length === 0) {
+            socket.emit("error", { message: "Conversation not found" });
+            return;
+          }
+
+          const isParticipant =
+            conversation[0].initiatorId === socket.userId ||
+            conversation[0].recipientId === socket.userId;
+          if (!isParticipant) {
+            logger.warn("WebSocket read receipt denied: Not a participant", {
+              socketId: socket.id,
+              userId: socket.userId,
+              conversationId: payload.conversationId,
+            });
+            socket.emit("error", {
+              message: "Not authorized for this conversation",
+            });
+            return;
+          }
+
+          // A user can only mark messages written by the other participant as read.
+          const receivedMessages = await db
+            .select({ id: messages.id })
+            .from(messages)
+            .where(
+              and(
+                eq(messages.conversationId, payload.conversationId),
+                inArray(messages.id, messageIds),
+                ne(messages.senderId, socket.userId),
+              ),
+            );
+          const receivedMessageIds = receivedMessages.map(
+            (message) => message.id,
+          );
+          if (receivedMessageIds.length === 0) {
+            return;
+          }
+
+          const existingReceipts = await db
+            .select({ messageId: messageReadReceipts.messageId })
+            .from(messageReadReceipts)
+            .where(
+              and(
+                eq(messageReadReceipts.readerId, socket.userId),
+                inArray(messageReadReceipts.messageId, receivedMessageIds),
+              ),
+            );
+          const existingMessageIds = new Set(
+            existingReceipts.map((receipt) => receipt.messageId),
+          );
+          const newlyReadMessageIds = receivedMessageIds.filter(
+            (messageId) => !existingMessageIds.has(messageId),
+          );
+          if (newlyReadMessageIds.length === 0) {
+            return;
+          }
+
+          const readAt = new Date();
+          await db.insert(messageReadReceipts).values(
+            newlyReadMessageIds.map((messageId) => ({
+              messageId,
+              readerId: socket.userId!,
+              readAt,
+            })),
+          );
+
+          io.to(`conversation:${payload.conversationId}`).emit(
+            "messages_read",
+            {
+              conversationId: payload.conversationId,
+              messageIds: newlyReadMessageIds,
+              readerId: socket.userId,
+              readAt,
+            },
+          );
+          logger.info("WebSocket messages marked as read", {
+            socketId: socket.id,
+            userId: socket.userId,
+            conversationId: payload.conversationId,
+            messageCount: newlyReadMessageIds.length,
+          });
+        } catch (error: any) {
+          logger.error("WebSocket mark_messages_read error", {
+            socketId: socket.id,
+            userId: socket.userId,
+            error: error.message,
+          });
+          socket.emit("error", { message: "Failed to mark messages as read" });
+        }
+      },
+    );
 
     /**
      * Typing indicator
