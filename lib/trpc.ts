@@ -24,7 +24,9 @@ export function createTRPCClient() {
       httpBatchLink({
         url: (() => {
           const u = `${getApiBaseUrl()}/api/trpc`;
-          console.log("[tRPC] Connecting to:", u);
+          if (__DEV__) {
+            console.log("[tRPC] Connecting to:", u);
+          }
           return u;
         })(),
         // tRPC v11: transformer MUST be inside httpBatchLink, not at root
