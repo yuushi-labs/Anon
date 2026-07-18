@@ -51,8 +51,8 @@ export function getApiBaseUrl(): string {
   if (ReactNative.Platform.OS !== "web" && __DEV__) {
     // If the user has a .local domain set in env, use it.
     // Otherwise, we could try to guess, but it's safer to provide a few options.
-    // For this specific environment, we know the hostname is yuushi-PC-NS850NAS
-    return "http://yuushi-PC-NS850NAS.local:3000";
+    // Use anon.local as the default development domain
+    return "http://anon.local:3000";
   }
 
   if (ReactNative.Platform.OS !== "web" && !__DEV__ && !API_BASE_URL) {
