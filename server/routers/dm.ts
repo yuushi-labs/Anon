@@ -8,8 +8,9 @@ import {
   messages,
   blocks,
   reports,
+  messageReadReceipts,
 } from "../../drizzle/schema";
-import { desc, eq, and, or } from "drizzle-orm";
+import { desc, eq, and, inArray, ne, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createHash } from "crypto";
 
@@ -57,7 +58,9 @@ export const dmRouter = router({
         }
 
         // Generate public key hash for uniqueness check
-        const publicKeyHash = createHash("sha256").update(input.publicKey).digest("hex");
+        const publicKeyHash = createHash("sha256")
+          .update(input.publicKey)
+          .digest("hex");
 
         // Check if public key hash already exists
         const existingKey = await database
@@ -326,6 +329,28 @@ export const dmRouter = router({
         .orderBy(desc(messages.createdAt))
         .limit(input.limit);
 
+      const receiptByMessageId = new Map<number, Date>();
+      if (msgs.length > 0) {
+        const receipts = await database
+          .select({
+            messageId: messageReadReceipts.messageId,
+            readAt: messageReadReceipts.readAt,
+          })
+          .from(messageReadReceipts)
+          .where(
+            and(
+              inArray(
+                messageReadReceipts.messageId,
+                msgs.map((message) => message.id),
+              ),
+              ne(messageReadReceipts.readerId, ctx.appUser.id),
+            ),
+          );
+        receipts.forEach((receipt) => {
+          receiptByMessageId.set(receipt.messageId, receipt.readAt);
+        });
+      }
+
       // Enrich messages with sender info (label and icon)
       const enrichedMsgs = await Promise.all(
         msgs.map(async (msg) => {
@@ -334,16 +359,19 @@ export const dmRouter = router({
             .from(appUsers)
             .where(eq(appUsers.id, msg.senderId))
             .limit(1);
-          
+
           const isInitiator = conversation[0].initiatorId === msg.senderId;
           const senderUser = sender[0];
 
           return {
             ...msg,
-            senderLabel: isInitiator ? conversation[0].anonLabel : (senderUser?.username || "Unknown"),
-            senderIcon: isInitiator ? null : (senderUser?.iconUrl || null),
+            senderLabel: isInitiator
+              ? conversation[0].anonLabel
+              : senderUser?.username || "Unknown",
+            senderIcon: isInitiator ? null : senderUser?.iconUrl || null,
+            readAt: receiptByMessageId.get(msg.id) ?? null,
           };
-        })
+        }),
       );
 
       return enrichedMsgs;
@@ -482,6 +510,30 @@ export const dmRouter = router({
       }
     }),
 
+  getReadReceiptSettings: protectedAppProcedure.query(({ ctx }) => ({
+    readReceiptsEnabled: ctx.appUser.readReceiptsEnabled,
+  })),
+  updateReadReceiptSettings: protectedAppProcedure
+    .input(
+      z.object({
+        readReceiptsEnabled: z.boolean(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Database not available",
+        });
+      }
+
+      await database
+        .update(appUsers)
+        .set({ readReceiptsEnabled: input.readReceiptsEnabled })
+        .where(eq(appUsers.id, ctx.appUser.id));
+      return { readReceiptsEnabled: input.readReceiptsEnabled };
+    }),
   registerFCMToken: protectedAppProcedure
     .input(
       z.object({

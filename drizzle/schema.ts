@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, index, unique, uniqueIndex } from "drizzle-orm/mysql-core";
+import { boolean, int, mysqlEnum, mysqlTable, text, timestamp, varchar, index, unique, uniqueIndex } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -46,6 +46,8 @@ export const appUsers = mysqlTable("app_users", {
   iconUrl: varchar("iconUrl", { length: 512 }),
   /** FCM token for push notifications */
   fcmToken: varchar("fcmToken", { length: 512 }),
+  /** Whether this user shares read receipts with conversation partners */
+  readReceiptsEnabled: boolean("readReceiptsEnabled").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
@@ -99,6 +101,24 @@ export const messages = mysqlTable("messages", {
 
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = typeof messages.$inferInsert;
+
+/**
+ * Message read receipts - records when a conversation participant reads a message.
+ * A receipt is unique per message and reader, preserving the first time it was read.
+ */
+export const messageReadReceipts = mysqlTable("message_read_receipts", {
+  id: int("id").autoincrement().primaryKey(),
+  messageId: int("messageId").notNull().references(() => messages.id),
+  readerId: int("readerId").notNull().references(() => appUsers.id),
+  readAt: timestamp("readAt").defaultNow().notNull(),
+}, (table) => ({
+  messageIdx: index("message_read_receipt_message_idx").on(table.messageId),
+  readerIdx: index("message_read_receipt_reader_idx").on(table.readerId),
+  uniqueMessageReader: unique("unique_message_reader_receipt").on(table.messageId, table.readerId),
+}));
+
+export type MessageReadReceipt = typeof messageReadReceipts.$inferSelect;
+export type InsertMessageReadReceipt = typeof messageReadReceipts.$inferInsert;
 
 /**
  * Blocks table - stores user block relationships
