@@ -55,12 +55,14 @@ export function getApiBaseUrl(): string {
   }
 
   if (ReactNative.Platform.OS !== "web" && !__DEV__ && !API_BASE_URL) {
-    console.warn(
-      "[OAuth] API_BASE_URL is not set for native production build. Network requests will likely fail.",
+    // In production native builds, a base URL is absolutely required.
+    // Throwing an error here prevents silent failures with relative URLs.
+    throw new Error(
+      "EXPO_PUBLIC_API_BASE_URL is not set. Please provide a valid API base URL for production builds.",
     );
   }
 
-  // Fallback to empty (will use relative URL)
+  // Fallback to empty (will use relative URL for web)
   return "";
 }
 
