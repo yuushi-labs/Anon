@@ -49,8 +49,15 @@ export function getApiBaseUrl(): string {
 
   // Fallback for native development: assume adb reverse tcp:3000 tcp:3000 is used
   // This allows connecting to the local server via http://localhost:3000
-  if (ReactNative.Platform.OS !== "web" && __DEV__) {
+  // Note: This only works for Android with adb reverse. iOS requires a LAN IP.
+  if (ReactNative.Platform.OS === "android" && __DEV__) {
     return "http://localhost:3000";
+  }
+
+  if (ReactNative.Platform.OS !== "web" && !__DEV__ && !API_BASE_URL) {
+    console.warn(
+      "[OAuth] API_BASE_URL is not set for native production build. Network requests will likely fail.",
+    );
   }
 
   // Fallback to empty (will use relative URL)
