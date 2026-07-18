@@ -72,6 +72,8 @@ const config: ExpoConfig = {
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
     permissions: ["POST_NOTIFICATIONS"],
+    // Allow cleartext traffic only in development to prevent security risks in production
+    usesCleartextTraffic: process.env.NODE_ENV === "development",
     intentFilters: [
       {
         action: "VIEW",
