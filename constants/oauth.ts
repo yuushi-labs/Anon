@@ -47,11 +47,12 @@ export function getApiBaseUrl(): string {
     return API_BASE_URL.replace(/\/$/, "");
   }
 
-  // Fallback for native development: assume adb reverse tcp:3000 tcp:3000 is used
-  // This allows connecting to the local server via http://localhost:3000
-  // Note: This only works for Android with adb reverse. iOS requires a LAN IP.
-  if (ReactNative.Platform.OS === "android" && __DEV__) {
-    return "http://localhost:3000";
+  // Fallback for native development: try .local domain first, then localhost
+  if (ReactNative.Platform.OS !== "web" && __DEV__) {
+    // If the user has a .local domain set in env, use it.
+    // Otherwise, we could try to guess, but it's safer to provide a few options.
+    // For this specific environment, we know the hostname is yuushi-PC-NS850NAS
+    return "http://yuushi-PC-NS850NAS.local:3000";
   }
 
   if (ReactNative.Platform.OS !== "web" && !__DEV__ && !API_BASE_URL) {
