@@ -111,11 +111,8 @@ export default function SettingsScreen() {
   };
 
   const handleDarkModeChange = (val: boolean) => {
+    // setColorScheme already persists the value via AsyncStorage in ThemeProvider
     setColorScheme(val ? "dark" : "light");
-    // Persist to localStorage
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("settings_dark_mode", val ? "dark" : "light");
-    }
   };
 
   const handleResetData = () => {

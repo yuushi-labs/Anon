@@ -1,8 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Appearance, View, useColorScheme as useSystemColorScheme } from "react-native";
 import { colorScheme as nativewindColorScheme, vars } from "nativewind";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { SchemeColors, type ColorScheme } from "@/constants/theme";
+
+const STORAGE_KEY_DARK_MODE = "settings_dark_mode";
 
 function hexToRgb(hex: string): string {
   const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
@@ -22,17 +25,28 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useSystemColorScheme() ?? "light";
+  const [colorScheme, setColorSchemeState] = useState<ColorScheme>(systemScheme);
 
-  // Load persisted color scheme from localStorage (web) or fallback to system
-  const getInitialScheme = (): ColorScheme => {
-    if (typeof window !== "undefined") {
-      const saved = window.localStorage.getItem("settings_dark_mode");
-      if (saved === "dark" || saved === "light") return saved;
-    }
-    return systemScheme;
-  };
-
-  const [colorScheme, setColorSchemeState] = useState<ColorScheme>(getInitialScheme);
+  // Load persisted color scheme from AsyncStorage on mount
+  useEffect(() => {
+    let isMounted = true;
+    const loadPersistedScheme = async () => {
+      try {
+        const saved = await AsyncStorage.getItem(STORAGE_KEY_DARK_MODE);
+        if (!isMounted) return;
+        if (saved === "dark" || saved === "light") {
+          setColorSchemeState(saved);
+          // applyScheme is handled by the useEffect watching [colorScheme]
+        }
+      } catch (error) {
+        console.error("[ThemeProvider] Failed to load persisted color scheme:", error);
+      }
+    };
+    void loadPersistedScheme();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const applyScheme = useCallback((scheme: ColorScheme) => {
     nativewindColorScheme.set(scheme);
@@ -50,9 +64,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const setColorScheme = useCallback((scheme: ColorScheme) => {
     setColorSchemeState(scheme);
-    applyScheme(scheme);
-  }, [applyScheme]);
+    // Persist to AsyncStorage (works on both native and web)
+    AsyncStorage.setItem(STORAGE_KEY_DARK_MODE, scheme).catch((error) => {
+      console.error("[ThemeProvider] Failed to persist color scheme:", error);
+    });
+  }, []);
 
+  // Single source of truth for applying the theme: whenever colorScheme state changes
   useEffect(() => {
     applyScheme(colorScheme);
   }, [applyScheme, colorScheme]);
@@ -80,7 +98,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }),
     [colorScheme, setColorScheme],
   );
-  console.log(value, themeVariables)
 
   return (
     <ThemeContext.Provider value={value}>
