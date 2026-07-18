@@ -42,6 +42,13 @@ const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
   version: "1.0.0",
+
+  extra: {
+    eas: {
+      projectId: "25f4e431-0e3d-4ac9-a9b2-f104a98f1c72",
+    },
+  },
+
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
@@ -86,6 +93,9 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    "expo-font",
+    "expo-web-browser",
+    "expo-asset",
     [
       "expo-audio",
       {
