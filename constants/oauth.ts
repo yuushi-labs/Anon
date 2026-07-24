@@ -1,5 +1,6 @@
 import * as Linking from "expo-linking";
 import * as ReactNative from "react-native";
+import Constants from "expo-constants";
 
 // Extract scheme from bundle ID (last segment timestamp, prefixed with "manus")
 // e.g., "space.manus.my.app.t20240115103045" -> "manus20240115103045"
@@ -53,10 +54,23 @@ export function getApiBaseUrl(): string {
     // For native development or preview builds, if no API_BASE_URL is provided,
     // we use a more robust fallback strategy.
     if (__DEV__) {
-      // Preferred: mDNS discovery (works for both iOS/Android if configured)
-      return "http://anon.local:3000";
+      // Get the host IP from expo-constants to avoid mDNS issues on some networks
+      const debuggerHost = Constants.expoConfig?.hostUri;
+      if (debuggerHost) {
+        // Use a URL-aware approach to safely extract the hostname, supporting IPv6
+        try {
+          const url = new URL(`http://${debuggerHost}`);
+          return `http://${url.hostname}:3000`;
+        } catch {
+          // Fallback to simple split if URL parsing fails
+          const host = debuggerHost.split(":")[0];
+          return `http://${host}:3000`;
+        }
+      }
+      // Fallback to localhost if hostUri is not available
+      return "http://localhost:3000";
     }
-    
+
     // In production/preview native builds, if EXPO_PUBLIC_API_BASE_URL is not set,
     // we must fail loudly to avoid silent network request failures.
     if (!API_BASE_URL) {
