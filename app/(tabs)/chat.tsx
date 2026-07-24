@@ -8,7 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/lib/auth-context";
 import { trpc } from "@/lib/trpc";
@@ -16,6 +16,8 @@ import * as WebSocket from "@/lib/websocket";
 import * as CryptoLib from "@/lib/crypto";
 import { getApiBaseUrl } from "@/constants/oauth";
 import { getSessionToken } from "@/lib/_core/auth";
+import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useColors } from "@/hooks/use-colors";
 
 interface Message {
   id: number;
@@ -50,7 +52,9 @@ function formatMessageTime(
 }
 
 export default function ChatScreen() {
-  const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
+  const router = useRouter();
+  const colors = useColors();
+  const { conversationId, title } = useLocalSearchParams<{ conversationId: string; title?: string }>();
   const { state: authState } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState("");
@@ -257,9 +261,23 @@ export default function ChatScreen() {
   };
 
   return (
-    <ScreenContainer className="bg-background">
+    <ScreenContainer className="bg-background" edges={["top", "left", "right"]}>
+      {/* Header */}
+      <View className="flex-row items-center px-4 py-3 border-b border-border">
+        <TouchableOpacity 
+          onPress={() => router.back()}
+          className="mr-3"
+        >
+          <IconSymbol name="chevron.left" size={28} color={colors.text} />
+        </TouchableOpacity>
+        <Text className="text-lg font-bold text-foreground flex-1" numberOfLines={1}>
+          {title || "チャット"}
+        </Text>
+      </View>
+
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
         className="flex-1"
       >
         <FlatList
@@ -269,10 +287,11 @@ export default function ChatScreen() {
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={{ paddingVertical: 8 }}
           scrollEnabled
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
-        <View className="border-t border-border px-4 py-3 flex-row items-center gap-2">
+        <View className="border-t border-border px-4 py-3 flex-row items-center gap-2 bg-background">
           <TextInput
-            className="flex-1 bg-surface border border-border rounded-full px-4 py-2 text-foreground"
+            className="flex-1 bg-surface border border-border rounded-2xl px-4 py-2 text-foreground min-h-[40px] max-h-[100px]"
             placeholder="メッセージを入力..."
             placeholderTextColor="#999"
             value={inputText}
