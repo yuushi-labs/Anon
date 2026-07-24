@@ -262,24 +262,25 @@ export default function ChatScreen() {
 
   return (
     <ScreenContainer className="bg-background" edges={["top", "left", "right"]}>
-      {/* Header */}
-      <View className="flex-row items-center px-4 py-3 border-b border-border">
-        <TouchableOpacity 
-          onPress={() => router.back()}
-          className="mr-3"
-        >
-          <IconSymbol name="chevron.left" size={28} color={colors.text} />
-        </TouchableOpacity>
-        <Text className="text-lg font-bold text-foreground flex-1" numberOfLines={1}>
-          {title || "チャット"}
-        </Text>
-      </View>
-
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+        // On Android, we rely on the window resizing behavior (configured in app.config.ts as "softwareKeyboardLayoutMode: resize")
+        // which provides a smoother experience when edge-to-edge is enabled.
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
       >
+        {/* Header */}
+        <View className="flex-row items-center px-4 py-3 border-b border-border">
+          <TouchableOpacity 
+            onPress={() => router.back()}
+            className="mr-3"
+          >
+            <IconSymbol name="chevron.left" size={28} color={colors.text} />
+          </TouchableOpacity>
+          <Text className="text-lg font-bold text-foreground flex-1" numberOfLines={1}>
+            {title || "チャット"}
+          </Text>
+        </View>
+
         <FlatList
           ref={flatListRef}
           data={messages}
