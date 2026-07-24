@@ -39,7 +39,7 @@ export const dmRouter = router({
         if (!database) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: "Database not available",
+            message: "Database not available. Please try again later.",
           });
         }
 
@@ -112,7 +112,7 @@ export const dmRouter = router({
       if (!database) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Database not available",
+          message: "Database not available. Please try again later.",
         });
       }
 
@@ -154,7 +154,7 @@ export const dmRouter = router({
         if (!database) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: "Database not available",
+            message: "Database not available. Please try again later.",
           });
         }
 
@@ -233,7 +233,7 @@ export const dmRouter = router({
       if (!database) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Database not available",
+          message: "Database not available. Please try again later.",
         });
       }
 
@@ -294,7 +294,7 @@ export const dmRouter = router({
       if (!database) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Database not available",
+          message: "Database not available. Please try again later.",
         });
       }
 
@@ -408,7 +408,7 @@ export const dmRouter = router({
         if (!database) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: "Database not available",
+            message: "Database not available. Please try again later.",
           });
         }
 
@@ -474,7 +474,7 @@ export const dmRouter = router({
         if (!database) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: "Database not available",
+            message: "Database not available. Please try again later.",
           });
         }
 
@@ -540,7 +540,7 @@ export const dmRouter = router({
       if (!database) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Database not available",
+          message: "Database not available. Please try again later.",
         });
       }
 
@@ -562,7 +562,7 @@ export const dmRouter = router({
         if (!database) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: "Database not available",
+            message: "Database not available. Please try again later.",
           });
         }
 

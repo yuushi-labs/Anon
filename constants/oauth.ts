@@ -49,13 +49,21 @@ export function getApiBaseUrl(): string {
 
   // Fallback for native development: return empty to allow callers to handle their own fallbacks
   // or return a default that includes localhost as a secondary option.
-  if (ReactNative.Platform.OS !== "web" && __DEV__) {
-    // We return empty here to allow the calling code (like chat.tsx) 
-    // to use its own fallback logic, or we can provide the preferred dev URL.
-    // To support both anon.local and localhost (via adb reverse), 
-    // it's best to let the user override via EXPO_PUBLIC_API_BASE_URL.
-    // If not set, we'll return empty to signal "use default local discovery".
-    return "";
+  if (ReactNative.Platform.OS !== "web") {
+    // For native development or preview builds, if no API_BASE_URL is provided,
+    // we use a more robust fallback strategy.
+    if (__DEV__) {
+      // Preferred: mDNS discovery (works for both iOS/Android if configured)
+      return "http://anon.local:3000";
+    }
+    
+    // In production/preview native builds, if EXPO_PUBLIC_API_BASE_URL is not set,
+    // we should still try to provide a reasonable fallback or fail loudly.
+    if (!API_BASE_URL) {
+      // If we are in a preview build (internal distribution), we might want a fallback
+      // but the user's report says "network request failed", so it's better to be explicit.
+      return ""; 
+    }
   }
 
   if (ReactNative.Platform.OS !== "web" && !__DEV__ && !API_BASE_URL) {

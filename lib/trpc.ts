@@ -25,12 +25,7 @@ export function createTRPCClient() {
       httpBatchLink({
         url: (() => {
           const baseUrl = getApiBaseUrl();
-          // Fallback logic for native development when no API_BASE_URL is provided
-          const resolvedBaseUrl = (baseUrl === "" && ReactNative.Platform.OS !== "web" && __DEV__)
-            ? "http://anon.local:3000" // Preferred: mDNS discovery
-            : baseUrl;
-            
-          const u = `${resolvedBaseUrl}/api/trpc`;
+          const u = baseUrl ? `${baseUrl}/api/trpc` : "/api/trpc";
           if (__DEV__) {
             console.log("[tRPC] Connecting to:", u);
           }

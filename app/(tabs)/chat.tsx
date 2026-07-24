@@ -118,12 +118,9 @@ export default function ChatScreen() {
     let isActive = true;
     const setup = async () => {
       const token = await getSessionToken();
-      const apiBase =
-        getApiBaseUrl() ||
-        `${typeof window !== "undefined" ? window.location.protocol : "http:"}//${
-          typeof window !== "undefined" ? window.location.hostname : "localhost"
-        }:3000`;
-      const wsUrl = apiBase.replace(/^http/, "ws");
+      const apiBase = getApiBaseUrl();
+      // If apiBase is empty, it will fall back to relative URL which might not work for WS in native
+      const wsUrl = apiBase ? apiBase.replace(/^http/, "ws") : "";
 
       const handleMessage = (message: Message) => {
         setMessages((previousMessages) => {
