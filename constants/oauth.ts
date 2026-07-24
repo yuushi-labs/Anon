@@ -57,8 +57,15 @@ export function getApiBaseUrl(): string {
       // Get the host IP from expo-constants to avoid mDNS issues on some networks
       const debuggerHost = Constants.expoConfig?.hostUri;
       if (debuggerHost) {
-        const host = debuggerHost.split(":")[0];
-        return `http://${host}:3000`;
+        // Use a URL-aware approach to safely extract the hostname, supporting IPv6
+        try {
+          const url = new URL(`http://${debuggerHost}`);
+          return `http://${url.hostname}:3000`;
+        } catch {
+          // Fallback to simple split if URL parsing fails
+          const host = debuggerHost.split(":")[0];
+          return `http://${host}:3000`;
+        }
       }
       // Fallback to localhost if hostUri is not available
       return "http://localhost:3000";
