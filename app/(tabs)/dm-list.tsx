@@ -53,10 +53,13 @@ export default function DMListScreen() {
     setIsRefreshing(false);
   };
 
-  const handleConversationPress = (conversationId: number) => {
+  const handleConversationPress = (conversation: Conversation) => {
     router.push({
       pathname: "/(tabs)/chat",
-      params: { conversationId },
+      params: { 
+        conversationId: conversation.conversationId,
+        title: conversation.anonLabel 
+      },
     });
   };
 
@@ -66,7 +69,7 @@ export default function DMListScreen() {
 
   const renderConversationItem = ({ item }: { item: Conversation }) => (
     <TouchableOpacity
-      onPress={() => handleConversationPress(item.conversationId)}
+      onPress={() => handleConversationPress(item)}
       className="flex-row items-center px-4 py-3 border-b border-border active:bg-surface"
     >
       {/* Avatar - always anonymous icon */}

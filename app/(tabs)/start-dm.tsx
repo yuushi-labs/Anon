@@ -74,7 +74,10 @@ export default function StartDMScreen() {
       // Navigate to chat screen using replace so the user doesn't go back to the start screen
       router.replace({
         pathname: "/(tabs)/chat",
-        params: { conversationId: result.conversationId },
+        params: { 
+          conversationId: result.conversationId,
+          title: result.anonLabel
+        },
       });
     } catch (error) {
       Alert.alert(
