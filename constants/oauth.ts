@@ -58,20 +58,12 @@ export function getApiBaseUrl(): string {
     }
     
     // In production/preview native builds, if EXPO_PUBLIC_API_BASE_URL is not set,
-    // we should still try to provide a reasonable fallback or fail loudly.
+    // we must fail loudly to avoid silent network request failures.
     if (!API_BASE_URL) {
-      // If we are in a preview build (internal distribution), we might want a fallback
-      // but the user's report says "network request failed", so it's better to be explicit.
-      return ""; 
+      throw new Error(
+        "EXPO_PUBLIC_API_BASE_URL is not set. Please provide a valid API base URL for native production/preview builds.",
+      );
     }
-  }
-
-  if (ReactNative.Platform.OS !== "web" && !__DEV__ && !API_BASE_URL) {
-    // In production native builds, a base URL is absolutely required.
-    // Throwing an error here prevents silent failures with relative URLs.
-    throw new Error(
-      "EXPO_PUBLIC_API_BASE_URL is not set. Please provide a valid API base URL for production builds.",
-    );
   }
 
   // Fallback to empty (will use relative URL for web)

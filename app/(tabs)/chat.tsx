@@ -168,7 +168,7 @@ export default function ChatScreen() {
         console.error("WebSocket error:", error);
       };
 
-      WebSocket.initializeWebSocket(
+      const socket = WebSocket.initializeWebSocket(
         wsUrl,
         token || "",
         currentUser.publicId,
@@ -178,9 +178,14 @@ export default function ChatScreen() {
         handleStopTyping,
         handleError,
       );
-      WebSocket.joinConversation(convId);
-      if (isActive) {
-        setIsSocketInitialized(true);
+      
+      if (socket) {
+        WebSocket.joinConversation(convId);
+        if (isActive) {
+          setIsSocketInitialized(true);
+        }
+      } else {
+        console.error("[Chat] Failed to initialize WebSocket: socket is null");
       }
     };
 
