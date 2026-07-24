@@ -70,6 +70,7 @@ const config: ExpoConfig = {
     },
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
+    softwareKeyboardLayoutMode: "resize",
     package: env.androidPackage,
     permissions: ["POST_NOTIFICATIONS"],
     // Allow cleartext traffic in development to allow connecting to local dev servers.

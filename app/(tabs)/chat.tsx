@@ -263,6 +263,8 @@ export default function ChatScreen() {
   return (
     <ScreenContainer className="bg-background" edges={["top", "left", "right"]}>
       <KeyboardAvoidingView
+        // On Android, we rely on the window resizing behavior (configured in app.config.ts as "softwareKeyboardLayoutMode: resize")
+        // which provides a smoother experience when edge-to-edge is enabled.
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
       >
