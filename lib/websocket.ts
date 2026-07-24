@@ -37,7 +37,12 @@ export function initializeWebSocket(
   onTyping: (user: TypingUser) => void,
   onStopTyping: (userId: number) => void,
   onError: (error: string) => void,
-): Socket {
+): Socket | null {
+  if (!serverUrl) {
+    console.error("[WebSocket] Cannot initialize: serverUrl is empty");
+    return null;
+  }
+
   if (!socket) {
     socket = io(serverUrl, {
       auth: {

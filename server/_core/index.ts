@@ -108,7 +108,7 @@ async function startServer() {
   const port = await findAvailablePort(preferredPort);
 
   if (port !== preferredPort) {
-    console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
+    console.warn(`[api] Port ${preferredPort} is busy, using port ${port} instead. WARNING: Native clients might fail to connect if they expect port ${preferredPort}.`);
   }
 
   // Listen on all interfaces (IPv4 and IPv6)

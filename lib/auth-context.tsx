@@ -239,8 +239,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error("Failed to initialize auth:", error);
         dispatch({ type: "SET_LOADING", payload: false });
       } finally {
-        // We don't reset isInitializing.current to true to prevent loops 
-        // if this component re-renders due to auth state changes
       }
     };
 
