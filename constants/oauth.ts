@@ -48,39 +48,24 @@ export function getApiBaseUrl(): string {
     return API_BASE_URL.replace(/\/$/, "");
   }
 
-  // Fallback for native development: return empty to allow callers to handle their own fallbacks
-  // or return a default that includes localhost as a secondary option.
+  // Fallback for native platforms
   if (ReactNative.Platform.OS !== "web") {
-    // For native development or preview builds, if no API_BASE_URL is provided,
-    // we use a more robust fallback strategy.
+    // If we have an explicit API_BASE_URL (from env), it's already handled above.
+    
+    // For native development (__DEV__ is true when running via Expo Go/Dev Client),
+    // we try to derive the host from Metro.
     if (__DEV__) {
-      // Get the host IP from expo-constants to avoid mDNS issues on some networks
       const debuggerHost = Constants.expoConfig?.hostUri;
       if (debuggerHost) {
-        // Use a URL-aware approach to safely extract the hostname, supporting IPv6
         try {
           const url = new URL(`http://${debuggerHost}`);
           return `http://${url.hostname}:3000`;
         } catch {
-          // Fallback to simple split if URL parsing fails
           const host = debuggerHost.split(":")[0];
           return `http://${host}:3000`;
         }
       }
-      // Fallback to localhost if hostUri is not available
       return "http://localhost:3000";
-    }
-
-    // In production/preview native builds, if EXPO_PUBLIC_API_BASE_URL is not set,
-    // we must fail loudly to avoid silent network request failures.
-    // Note: EAS Build requires EXPO_PUBLIC_API_BASE_URL to be set in the build profile or environment.
-    if (!API_BASE_URL) {
-      // For production/preview, we still return an empty string or a fallback if possible,
-      // but warn loudly in console as throw might crash the app startup.
-      console.error(
-        "EXPO_PUBLIC_API_BASE_URL is not set. API requests will fail in production/preview builds.",
-      );
-      return "";
     }
   }
 
