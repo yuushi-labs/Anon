@@ -101,28 +101,48 @@ export async function generateKeyPair(): Promise<{
  * Save private key to secure storage
  */
 export async function savePrivateKey(privateKey: string): Promise<void> {
-  await setItem(PRIVATE_KEY_STORAGE_KEY, privateKey);
+  try {
+    await setItem(PRIVATE_KEY_STORAGE_KEY, privateKey);
+  } catch (error) {
+    console.error("Failed to save private key:", error);
+    throw error;
+  }
 }
 
 /**
  * Save public key to local storage
  */
 export async function savePublicKey(publicKey: string): Promise<void> {
-  await setItem(PUBLIC_KEY_STORAGE_KEY, publicKey);
+  try {
+    await setItem(PUBLIC_KEY_STORAGE_KEY, publicKey);
+  } catch (error) {
+    console.error("Failed to save public key:", error);
+    throw error;
+  }
 }
 
 /**
  * Get private key from secure storage
  */
 export async function getPrivateKey(): Promise<string | null> {
-  return await getItem(PRIVATE_KEY_STORAGE_KEY);
+  try {
+    return await getItem(PRIVATE_KEY_STORAGE_KEY);
+  } catch (error) {
+    console.error("Failed to retrieve private key:", error);
+    return null;
+  }
 }
 
 /**
  * Get public key from local storage
  */
 export async function getPublicKey(): Promise<string | null> {
-  return await getItem(PUBLIC_KEY_STORAGE_KEY);
+  try {
+    return await getItem(PUBLIC_KEY_STORAGE_KEY);
+  } catch (error) {
+    console.error("Failed to retrieve public key:", error);
+    return null;
+  }
 }
 
 /**
@@ -157,14 +177,24 @@ export async function deleteKeys(): Promise<void> {
  * Save public ID
  */
 export async function savePublicId(publicId: string): Promise<void> {
-  await setItem(PUBLIC_ID_STORAGE_KEY, publicId);
+  try {
+    await setItem(PUBLIC_ID_STORAGE_KEY, publicId);
+  } catch (error) {
+    console.error("Failed to save public ID:", error);
+    throw error;
+  }
 }
 
 /**
  * Get public ID
  */
 export async function getPublicId(): Promise<string | null> {
-  return await getItem(PUBLIC_ID_STORAGE_KEY);
+  try {
+    return await getItem(PUBLIC_ID_STORAGE_KEY);
+  } catch (error) {
+    console.error("Failed to retrieve public ID:", error);
+    return null;
+  }
 }
 
 /**

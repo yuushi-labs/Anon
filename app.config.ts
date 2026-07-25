@@ -36,6 +36,7 @@ const env = {
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
+  easProjectId: "f8b9e6e4-4d1a-4f5a-9b8a-1c2d3e4f5a6b", // Placeholder ID for local development
 };
 
 const config: ExpoConfig = {
@@ -138,6 +139,11 @@ const config: ExpoConfig = {
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
+  },
+  extra: {
+    eas: {
+      projectId: env.easProjectId,
+    },
   },
 };
 
