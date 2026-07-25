@@ -7,6 +7,7 @@ import {
   Alert,
   Share,
   Image,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
@@ -19,21 +20,37 @@ export default function ProfileScreen() {
 
   const handleSharePublicId = async () => {
     if (!authState.user) return;
+    const shareText = `匿名DMで私とチャットしましょう！\nID: ${authState.user.publicId}`;
 
     try {
-      await Share.share({
-        message: `匿名DMで私とチャットしましょう！\nID: ${authState.user.publicId}\n\nアプリをダウンロード: https://dm.app`,
-        title: "匿名DM",
-      });
-    } catch (error) {
-      console.error("Share failed:", error);
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share({ title: "匿名DM", text: shareText });
+      } else {
+        await Share.share({ message: shareText, title: "匿名DM" });
+      }
+    } catch (error: any) {
+      // User cancelled share — ignore AbortError
+      if (error?.name !== "AbortError") {
+        console.error("Share failed:", error);
+      }
     }
   };
 
-  const handleCopyPublicId = () => {
+  const handleCopyPublicId = async () => {
     if (!authState.user) return;
-    // In production, use react-native-clipboard
-    Alert.alert("コピーしました", `ID: ${authState.user.publicId}`);
+    const text = authState.user.publicId;
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(text);
+        Alert.alert("コピーしました", `ID: ${text}`);
+      } else {
+        // Fallback for environments without clipboard API
+        Alert.alert("公開ID", text);
+      }
+    } catch (error) {
+      console.error("Copy failed:", error);
+      Alert.alert("公開ID", text);
+    }
   };
 
   const handleLogout = async () => {

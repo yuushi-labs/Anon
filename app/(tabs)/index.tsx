@@ -8,17 +8,11 @@ export default function HomeScreen() {
   const { state: authState } = useAuth();
 
   const handleNavigateToDMList = () => {
-    router.push({
-      pathname: "/(tabs)",
-      params: { screen: "dm-list" },
-    });
+    router.push("/(tabs)/dm-list");
   };
 
   const handleNavigateToProfile = () => {
-    router.push({
-      pathname: "/(tabs)",
-      params: { screen: "profile" },
-    });
+    router.push("/(tabs)/profile");
   };
 
   return (

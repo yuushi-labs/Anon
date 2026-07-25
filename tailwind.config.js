@@ -5,7 +5,7 @@ const tailwindColors = Object.fromEntries(
   Object.entries(themeColors).map(([name, swatch]) => [
     name,
     {
-      DEFAULT: `var(--color-${name})`,
+      DEFAULT: `rgb(var(--color-${name}) / <alpha-value>)`,
       light: swatch.light,
       dark: swatch.dark,
     },

@@ -43,6 +43,13 @@ const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
   version: "1.0.0",
+
+  extra: {
+    eas: {
+      projectId: "25f4e431-0e3d-4ac9-a9b2-f104a98f1c72",
+    },
+  },
+
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
@@ -64,8 +71,12 @@ const config: ExpoConfig = {
     },
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
+    softwareKeyboardLayoutMode: "resize",
     package: env.androidPackage,
     permissions: ["POST_NOTIFICATIONS"],
+    // Allow cleartext traffic only when necessary (local dev or non-HTTPS production).
+    // Note: EAS Build (APK) will correctly evaluate this if the environment variable is present at build time.
+    usesCleartextTraffic: process.env.NODE_ENV === "development" || !!process.env.EXPO_PUBLIC_API_BASE_URL?.startsWith("http://"),
     intentFilters: [
       {
         action: "VIEW",
@@ -87,6 +98,9 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    "expo-font",
+    "expo-web-browser",
+    "expo-asset",
     [
       "expo-audio",
       {

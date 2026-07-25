@@ -43,7 +43,6 @@ export default function ChatActionsScreen() {
             try {
               setIsLoading(true);
               await blockUserMutation.mutateAsync({
-                blockerId: authState.user?.id || 0,
                 blockedPublicId: senderLabel || "",
               });
               Alert.alert("成功", "ユーザーをブロックしました");
@@ -71,7 +70,6 @@ export default function ChatActionsScreen() {
     try {
       setIsLoading(true);
       await reportMessageMutation.mutateAsync({
-        reporterId: authState.user?.id || 0,
         messageId: msgId,
         reason: reportReason,
       });

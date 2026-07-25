@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,12 +7,113 @@ import {
   Switch,
   Alert,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ScreenContainer } from "@/components/screen-container";
+import { useThemeContext } from "@/lib/theme-provider";
+import { trpc } from "@/lib/trpc";
+
+const STORAGE_KEY_NOTIFICATIONS = "settings_notifications";
+const STORAGE_KEY_READ_RECEIPTS = "settings_read_receipts";
 
 export default function SettingsScreen() {
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
-  const [readReceipts, setReadReceipts] = useState(true);
+  const { colorScheme, setColorScheme } = useThemeContext();
+  const [notificationsEnabled, setNotificationsEnabledState] = useState(true);
+  const [readReceipts, setReadReceiptsState] = useState(true);
+  const readReceiptSettingsQuery = trpc.dm.getReadReceiptSettings.useQuery();
+  const updateReadReceiptSettingsMutation =
+    trpc.dm.updateReadReceiptSettings.useMutation();
+
+  // AsyncStorage is supported by both Expo Web and native builds.
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadLocalSettings = async () => {
+      try {
+        const [storedNotifications, storedReadReceipts] = await Promise.all([
+          AsyncStorage.getItem(STORAGE_KEY_NOTIFICATIONS),
+          AsyncStorage.getItem(STORAGE_KEY_READ_RECEIPTS),
+        ]);
+        if (!isMounted) return;
+
+        if (storedNotifications !== null) {
+          setNotificationsEnabledState(storedNotifications === "true");
+        }
+        if (storedReadReceipts !== null) {
+          setReadReceiptsState(storedReadReceipts === "true");
+        }
+      } catch (error) {
+        console.error("[Settings] Failed to load local settings:", error);
+      }
+    };
+
+    void loadLocalSettings();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // The server is the source of truth because read receipts may be sent from
+  // either the Web client or a native client for the same account.
+  useEffect(() => {
+    const enabled = readReceiptSettingsQuery.data?.readReceiptsEnabled;
+    if (typeof enabled !== "boolean") return;
+
+    setReadReceiptsState(enabled);
+    AsyncStorage.setItem(STORAGE_KEY_READ_RECEIPTS, String(enabled)).catch(
+      (error) => {
+        console.error(
+          "[Settings] Failed to persist read receipts setting from server:",
+          error,
+        );
+      },
+    );
+  }, [readReceiptSettingsQuery.data?.readReceiptsEnabled]);
+
+  const handleNotificationsChange = async (val: boolean) => {
+    setNotificationsEnabledState(val);
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY_NOTIFICATIONS, String(val));
+    } catch (error) {
+      console.error("[Settings] Failed to save notifications setting:", error);
+    }
+  };
+
+  const handleReadReceiptsChange = async (val: boolean) => {
+    const previousValue = readReceipts;
+    setReadReceiptsState(val);
+
+    try {
+      // Try local storage first
+      await AsyncStorage.setItem(STORAGE_KEY_READ_RECEIPTS, String(val));
+      // Then sync with server
+      await updateReadReceiptSettingsMutation.mutateAsync({
+        readReceiptsEnabled: val,
+      });
+    } catch (error) {
+      // Revert UI and local storage on failure
+      setReadReceiptsState(previousValue);
+      try {
+        await AsyncStorage.setItem(
+          STORAGE_KEY_READ_RECEIPTS,
+          String(previousValue),
+        );
+      } catch (innerError) {
+        console.error("[Settings] Failed to revert local setting:", innerError);
+      }
+
+      Alert.alert(
+        "設定を保存できませんでした",
+        error instanceof Error
+          ? error.message
+          : "既読表示の設定を保存できませんでした。",
+      );
+    }
+  };
+
+  const handleDarkModeChange = (val: boolean) => {
+    // setColorScheme already persists the value via AsyncStorage in ThemeProvider
+    setColorScheme(val ? "dark" : "light");
+  };
 
   const handleResetData = () => {
     Alert.alert(
@@ -27,7 +128,7 @@ export default function SettingsScreen() {
             Alert.alert("完了", "データがリセットされました");
           },
         },
-      ]
+      ],
     );
   };
 
@@ -37,16 +138,12 @@ export default function SettingsScreen() {
         <View className="px-6 py-8 gap-6">
           {/* Header */}
           <View>
-            <Text className="text-2xl font-bold text-foreground">
-              設定
-            </Text>
+            <Text className="text-2xl font-bold text-foreground">設定</Text>
           </View>
 
           {/* Notifications */}
           <View className="gap-3">
-            <Text className="text-sm font-semibold text-foreground">
-              通知
-            </Text>
+            <Text className="text-sm font-semibold text-foreground">通知</Text>
 
             <View className="bg-surface rounded-lg p-4 border border-border flex-row items-center justify-between">
               <View className="flex-1">
@@ -59,7 +156,7 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={notificationsEnabled}
-                onValueChange={setNotificationsEnabled}
+                onValueChange={handleNotificationsChange}
               />
             </View>
 
@@ -74,16 +171,15 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={readReceipts}
-                onValueChange={setReadReceipts}
+                onValueChange={handleReadReceiptsChange}
+                disabled={updateReadReceiptSettingsMutation.isPending}
               />
             </View>
           </View>
 
           {/* Display */}
           <View className="gap-3">
-            <Text className="text-sm font-semibold text-foreground">
-              表示
-            </Text>
+            <Text className="text-sm font-semibold text-foreground">表示</Text>
 
             <View className="bg-surface rounded-lg p-4 border border-border flex-row items-center justify-between">
               <View className="flex-1">
@@ -95,8 +191,8 @@ export default function SettingsScreen() {
                 </Text>
               </View>
               <Switch
-                value={darkMode}
-                onValueChange={setDarkMode}
+                value={colorScheme === "dark"}
+                onValueChange={handleDarkModeChange}
               />
             </View>
           </View>
@@ -143,9 +239,7 @@ export default function SettingsScreen() {
                 <Text className="text-base font-semibold text-foreground">
                   バージョン
                 </Text>
-                <Text className="text-xs text-muted mt-1">
-                  v1.0.0
-                </Text>
+                <Text className="text-xs text-muted mt-1">v1.0.0</Text>
               </View>
             </TouchableOpacity>
 
@@ -170,9 +264,7 @@ export default function SettingsScreen() {
 
           {/* Danger Zone */}
           <View className="gap-3">
-            <Text className="text-sm font-semibold text-error">
-              危険ゾーン
-            </Text>
+            <Text className="text-sm font-semibold text-error">危険ゾーン</Text>
 
             <TouchableOpacity
               onPress={handleResetData}

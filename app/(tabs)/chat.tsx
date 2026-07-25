@@ -1,19 +1,15 @@
-import { useState, useEffect, useRef } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  TextInput,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-} from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/lib/auth-context";
 import { trpc } from "@/lib/trpc";
 import * as WebSocket from "@/lib/websocket";
 import * as CryptoLib from "@/lib/crypto";
+import { getApiBaseUrl } from "@/constants/oauth";
+import { getSessionToken } from "@/lib/_core/auth";
+import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useColors } from "@/hooks/use-colors";
 
 interface Message {
   id: number;
@@ -22,87 +18,207 @@ interface Message {
   senderLabel: string;
   senderIcon: string | null;
   content: string;
-  createdAt: Date;
+  createdAt: Date | string;
+  readAt?: Date | string | null;
+}
+
+function formatMessageTime(
+  createdAt: Date | string | null | undefined,
+): string {
+  try {
+    if (!createdAt) throw new Error("empty date");
+    const date = new Date(createdAt);
+    if (Number.isNaN(date.getTime())) {
+      throw new Error("invalid date");
+    }
+    return date.toLocaleTimeString("ja-JP", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return new Date().toLocaleTimeString("ja-JP", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
 }
 
 export default function ChatScreen() {
-  const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
+  const router = useRouter();
+  const colors = useColors();
+  const { conversationId, title } = useLocalSearchParams<{ conversationId: string; title?: string }>();
   const { state: authState } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
+  const [isSocketInitialized, setIsSocketInitialized] = useState(false);
+  const flatListRef = useRef<FlatList<Message>>(null);
+  const submittedReadMessageIds = useRef(new Set<number>());
 
-  const convId = parseInt(conversationId || "0");
+  const convId = Number.parseInt(conversationId || "0", 10);
   const getMessagesQuery = trpc.dm.getMessages.useQuery(
     { conversationId: convId },
-    { enabled: convId > 0 }
+    { enabled: convId > 0 },
+  );
+
+  const markIncomingMessagesAsRead = useCallback(
+    (messagesToMark: readonly Message[]) => {
+      const currentUser = authState.user;
+      if (convId <= 0 || !currentUser) return;
+
+      const unreadIncomingMessageIds = messagesToMark
+        .filter(
+          (message) =>
+            message.senderId !== currentUser.id &&
+            !submittedReadMessageIds.current.has(message.id),
+        )
+        .map((message) => message.id);
+      if (unreadIncomingMessageIds.length === 0) return;
+
+      // Only add to submitted list AFTER the server acknowledges receipt.
+      // This ensures that if the server rejects (e.g. rate limiting), we can retry later.
+      WebSocket.markMessagesAsRead(
+        convId,
+        unreadIncomingMessageIds,
+        (acknowledgedIds) => {
+          acknowledgedIds.forEach((messageId) => {
+            submittedReadMessageIds.current.add(messageId);
+          });
+        },
+      );
+    },
+    [authState.user, convId],
   );
 
   useEffect(() => {
-    if (getMessagesQuery.data) {
-      setMessages(getMessagesQuery.data as any);
-      setIsLoading(false);
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }
+    submittedReadMessageIds.current.clear();
+  }, [convId]);
+
+  useEffect(() => {
+    if (!getMessagesQuery.data) return;
+
+    // The API returns messages in descending order; show them oldest first.
+    setMessages([...(getMessagesQuery.data as Message[])].reverse());
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
   }, [getMessagesQuery.data]);
 
   useEffect(() => {
-    if (convId > 0 && authState.token) {
-      // Initialize WebSocket
-      const handleMessage = (msg: Message) => {
-        setMessages((prev) => [...prev, msg]);
-        flatListRef.current?.scrollToEnd({ animated: true });
+    if (!isSocketInitialized) return;
+    markIncomingMessagesAsRead(messages);
+  }, [isSocketInitialized, markIncomingMessagesAsRead, messages]);
+
+  useEffect(() => {
+    const currentUser = authState.user;
+    if (convId <= 0 || !currentUser) return;
+
+    let isActive = true;
+    const setup = async () => {
+      const token = await getSessionToken();
+      const apiBase = getApiBaseUrl();
+      // If apiBase is empty, it will fall back to relative URL which might not work for WS in native
+      const wsUrl = apiBase ? apiBase.replace(/^http/, "ws") : "";
+
+      const handleMessage = (message: Message) => {
+        setMessages((previousMessages) => {
+          if (
+            previousMessages.some(
+              (existingMessage) => existingMessage.id === message.id,
+            )
+          ) {
+            return previousMessages;
+          }
+          return [...previousMessages, message];
+        });
+        setTimeout(
+          () => flatListRef.current?.scrollToEnd({ animated: true }),
+          50,
+        );
       };
 
-      const handleTyping = (user: any) => {
+      const handleMessagesRead = (receipt: WebSocket.ReadReceipt) => {
+        if (
+          receipt.conversationId !== convId ||
+          receipt.readerId === currentUser.id
+        ) {
+          return;
+        }
+
+        const readMessageIds = new Set(receipt.messageIds);
+        setMessages((previousMessages) =>
+          previousMessages.map((message) =>
+            message.senderId === currentUser.id &&
+            readMessageIds.has(message.id)
+              ? { ...message, readAt: receipt.readAt }
+              : message,
+          ),
+        );
+      };
+
+      const handleTyping = (user: WebSocket.TypingUser) => {
         console.log("User typing:", user);
       };
-
       const handleStopTyping = (userId: number) => {
         console.log("User stopped typing:", userId);
       };
-
       const handleError = (error: string) => {
         console.error("WebSocket error:", error);
       };
 
-      WebSocket.initializeWebSocket(
-        "http://localhost:3000", // Replace with actual server URL
-        authState.token,
-        authState.user?.publicId || "",
+      const socket = WebSocket.initializeWebSocket(
+        wsUrl,
+        token || "",
+        currentUser.publicId,
         handleMessage,
+        handleMessagesRead,
         handleTyping,
         handleStopTyping,
-        handleError
+        handleError,
       );
+      
+      if (socket) {
+        WebSocket.joinConversation(convId);
+        if (isActive) {
+          setIsSocketInitialized(true);
+        }
+      } else {
+        console.error("[Chat] Failed to initialize WebSocket: socket is null");
+        if (isActive) {
+          setIsSocketInitialized(false);
+          Alert.alert(
+            "接続エラー",
+            "チャットサーバーへの接続に失敗しました。ネットワーク接続を確認して、再度お試しください。"
+          );
+        }
+      }
+    };
 
-      WebSocket.joinConversation(convId);
-
-      return () => {
-        WebSocket.leaveConversation(convId);
-      };
-    }
-  }, [convId, authState.token, authState.user?.publicId]);
+    void setup();
+    return () => {
+      isActive = false;
+      setIsSocketInitialized(false);
+      WebSocket.leaveConversation(convId);
+    };
+  }, [authState.user, convId]);
 
   const handleSendMessage = async () => {
     if (!inputText.trim() || !authState.user) return;
+
+    if (!isSocketInitialized) {
+      Alert.alert("エラー", "チャットに接続されていません。しばらく待ってから再度お試しください。");
+      return;
+    }
 
     try {
       setIsSending(true);
       const timestamp = Date.now();
       const privateKey = await CryptoLib.getPrivateKey();
-
       if (!privateKey) {
         throw new Error("Private key not found");
       }
-
       const signature = await CryptoLib.createRequestSignature(
         JSON.stringify({ conversationId: convId, content: inputText }),
-        timestamp
+        timestamp,
       );
-
       await WebSocket.sendMessage(convId, inputText, signature, timestamp);
       setInputText("");
     } catch (error) {
@@ -114,7 +230,6 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isOwn = item.senderId === authState.user?.id;
-
     return (
       <View
         className={`flex-row px-4 py-2 ${isOwn ? "justify-end" : "justify-start"}`}
@@ -129,56 +244,71 @@ export default function ChatScreen() {
               {item.senderLabel}
             </Text>
           )}
-          <Text className={`text-sm ${isOwn ? "text-white" : "text-foreground"}`}>
+          <Text
+            className={`text-sm ${isOwn ? "text-white" : "text-foreground"}`}
+          >
             {item.content}
           </Text>
-          <Text
-            className={`text-xs mt-1 ${
-              isOwn ? "text-white/70" : "text-muted"
-            }`}
-          >
-            {new Date(item.createdAt).toLocaleTimeString("ja-JP", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </Text>
+          <View className="flex-row items-center justify-end gap-2 mt-1">
+            <Text
+              className={`text-xs ${isOwn ? "text-white/70" : "text-muted"}`}
+            >
+              {formatMessageTime(item.createdAt)}
+            </Text>
+            {isOwn && item.readAt && (
+              <Text className="text-xs text-white/70">既読</Text>
+            )}
+          </View>
         </View>
       </View>
     );
   };
 
   return (
-    <ScreenContainer className="bg-background">
+    <ScreenContainer className="bg-background" edges={["top", "left", "right"]}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        // On Android, we rely on the window resizing behavior (configured in app.config.ts as "softwareKeyboardLayoutMode: resize")
+        // which provides a smoother experience when edge-to-edge is enabled.
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
       >
-        {/* Messages List */}
+        {/* Header */}
+        <View className="flex-row items-center px-4 py-3 border-b border-border">
+          <TouchableOpacity 
+            onPress={() => router.back()}
+            className="mr-3"
+          >
+            <IconSymbol name="chevron.left" size={28} color={colors.text} />
+          </TouchableOpacity>
+          <Text className="text-lg font-bold text-foreground flex-1" numberOfLines={1}>
+            {title || "チャット"}
+          </Text>
+        </View>
+
         <FlatList
           ref={flatListRef}
           data={messages}
           renderItem={renderMessage}
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={{ paddingVertical: 8 }}
-          scrollEnabled={true}
+          scrollEnabled
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
-
-        {/* Input Area */}
-        <View className="border-t border-border px-4 py-3 flex-row items-center gap-2">
+        <View className="border-t border-border px-4 py-3 flex-row items-center gap-2 bg-background">
           <TextInput
-            className="flex-1 bg-surface border border-border rounded-full px-4 py-2 text-foreground"
+            className="flex-1 bg-surface border border-border rounded-2xl px-4 py-2 text-foreground min-h-[40px] max-h-[100px]"
             placeholder="メッセージを入力..."
             placeholderTextColor="#999"
             value={inputText}
             onChangeText={setInputText}
-            editable={!isSending}
+            editable={!isSending && isSocketInitialized}
             multiline
           />
           <TouchableOpacity
             onPress={handleSendMessage}
-            disabled={!inputText.trim() || isSending}
+            disabled={!inputText.trim() || isSending || !isSocketInitialized}
             className={`w-10 h-10 rounded-full items-center justify-center ${
-              !inputText.trim() || isSending ? "bg-primary/50" : "bg-primary"
+              !inputText.trim() || isSending || !isSocketInitialized ? "bg-primary/50" : "bg-primary"
             }`}
           >
             <Text className="text-white text-lg font-bold">→</Text>

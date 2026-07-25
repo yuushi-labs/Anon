@@ -1,0 +1,550 @@
+author:	qodo-code-review
+association:	none
+edited:	false
+status:	none
+--
+<h3>PR Summary by Qodo</h3>
+
+Fix native networking by hardening API base URL resolution
+
+<code>🐞 Bug fix</code> <code>✨ Enhancement</code> <code>🕐 20-40 Minutes</code>
+
+<img src="https://www.qodo.ai/wp-content/uploads/2025/11/light-grey-line.svg" height="10%" alt="Grey Divider">
+
+<details>
+<summary>AI Description</summary>
+
+<dl>
+<dd>
+<br/>
+
+><pre>
+>• Centralize native API base URL fallback to prevent &quot;network request failed&quot; on devices.
+>• Use relative tRPC URLs when no base URL is available; guard WebSocket initialization.
+>• Improve server diagnostics (port warning) and make DB-unavailable errors more user-friendly.
+></pre>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
+<summary>Diagram</summary>
+
+<dl>
+<dd>
+
+<br/>
+
+```mermaid
+graph TD
+  A["Chat screen"] --> B["getApiBaseUrl()"] --> C["API base URL"]
+  C --> D["tRPC client"] --> E["HTTP /api/trpc"] --> F["API server"]
+  C --> G["WebSocket init"] --> H["WS connect"] --> I["Socket.io server"]
+  F --> I
+```
+
+</dd>
+</dl>
+
+</details>
+
+
+
+
+<details>
+<summary>High-Level Assessment</summary>
+
+<dl>
+<dd>
+
+<br/>
+
+>The following are alternative approaches to this PR:
+
+<details>
+<summary><b>1. Derive native dev host from Expo hostUri (no hard-coded mDNS)</b></summary>
+
+<dl>
+<dd>
+
+- ➕ Avoids hard-coding &quot;anon.local&quot; and works on more LAN setups
+- ➕ Can auto-map Metro host (8081) to API port (3000) similarly to web logic
+- ➕ Reduces reliance on mDNS configuration on devices
+- ➖ Requires additional Expo runtime dependency/logic (e.g., expo-constants)
+- ➖ HostUri formats can vary across Expo Go/dev-client modes and tunnels
+
+</dd>
+</dl>
+
+</details>
+
+<details>
+<summary><b>2. Fail fast on native when API base URL is missing (all non-web)</b></summary>
+
+<dl>
+<dd>
+
+- ➕ Prevents silent relative-URL failures that manifest as &quot;network request failed&quot;
+- ➕ Forces correct configuration in preview/production builds
+- ➖ Less forgiving for ad-hoc internal previews unless a default is provided
+- ➖ Requires clear developer documentation for setting EXPO_PUBLIC_API_BASE_URL
+
+</dd>
+</dl>
+
+</details>
+
+<details>
+<summary><b>3. Support multiple native dev fallbacks (mDNS + adb reverse + LAN IP)</b></summary>
+
+<dl>
+<dd>
+
+- ➕ More robust across Android emulators, physical devices, and CI/dev environments
+- ➕ Can reduce setup friction for contributors
+- ➖ Adds branching complexity and more surface area to test
+- ➖ May still be ambiguous which host should be preferred without explicit config
+
+</dd>
+</dl>
+
+</details>
+
+>**Recommendation:** The PR’s direction—centralizing URL resolution in getApiBaseUrl() and removing scattered call-site fallbacks—is the right approach. As a follow-up, consider (1) deriving the native dev host from Expo’s hostUri (or similar) to avoid a hard-coded mDNS name, and (2) ensuring native non-dev builds truly fail fast when EXPO_PUBLIC_API_BASE_URL is missing (the current early `return &quot;&quot;` path can bypass the later throw), so preview/production don’t silently fall back to relative URLs.
+
+</dd>
+</dl>
+
+</details>
+
+<details>
+<summary> Files changed (7) <code> +35 / -32 </code> </summary>
+
+<dl>
+<dd>
+
+<br/>
+
+<details>
+<summary>Enhancement (2) <code> +10 / -10 </code></summary>
+
+<dl>
+<dd>
+
+<details>
+<summary>index.ts<code>Warn loudly when the API server cannot bind to the preferred port</code> <code>+1/-1</code></summary>
+
+<br/>
+
+>Warn loudly when the API server cannot bind to the preferred port
+>
+><pre>
+>• Upgrades the port-fallback log to a warning and explicitly calls out that native clients may fail if they assume port 3000.
+></pre>
+>
+><a href='https://github.com/yuushi2024/Anon/pull/20/files#diff-88e2785da67f541f98c332dcee7b6b1b487fa8a80f919b983807e01d59874d88'>server/_core/index.ts</a>
+
+</details>
+
+<details>
+<summary>dm.ts<code>Make DB-unavailable errors more user-actionable across DM endpoints</code> <code>+9/-9</code></summary>
+
+<br/>
+
+>Make DB-unavailable errors more user-actionable across DM endpoints
+>
+><pre>
+>• Updates repeated &quot;Database not available&quot; TRPCError messages to include a user-facing retry hint (&quot;Please try again later.&quot;) across multiple procedures.
+></pre>
+>
+><a href='https://github.com/yuushi2024/Anon/pull/20/files#diff-c7cdc6f2eeebb499bdf9969a80072a2b059e4352e9065a15b7fefebb3496df5f'>server/routers/dm.ts</a>
+
+</details>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
+<summary>Bug fix (4) <code> +25 / -20 </code></summary>
+
+<dl>
+<dd>
+
+<details>
+<summary>chat.tsx<code>Use centralized API base URL for WebSocket and avoid fragile window-based fallback</code> <code>+3/-6</code></summary>
+
+<br/>
+
+>Use centralized API base URL for WebSocket and avoid fragile window-based fallback
+>
+><pre>
+>• Removes the window/localhost-derived fallback API base and relies on getApiBaseUrl() instead. WebSocket URL construction now explicitly handles an empty base URL by passing an empty serverUrl, which is guarded downstream.
+></pre>
+>
+><a href='https://github.com/yuushi2024/Anon/pull/20/files#diff-e485c90fbec13f9ea38663ed23ccc619c56a46acb35e40e9fcb8ee625fd94df6'>app/(tabs)/chat.tsx</a>
+
+</details>
+
+<details>
+<summary>oauth.ts<code>Improve getApiBaseUrl() behavior for native dev with robust fallback</code> <code>+15/-7</code></summary>
+
+<br/>
+
+>Improve getApiBaseUrl() behavior for native dev with robust fallback
+>
+><pre>
+>• Adjusts API base URL resolution so native platforms prefer a stable dev fallback (http://anon.local:3000) when EXPO_PUBLIC_API_BASE_URL is not set. Adds clearer intent/comments around native preview/production behavior when the base URL is missing.
+></pre>
+>
+><a href='https://github.com/yuushi2024/Anon/pull/20/files#diff-584b8e05c44f633561da5ba49de3e7cbeb0bbe8a0fc52623c7b0e3f58075f001'>constants/oauth.ts</a>
+
+</details>
+
+<details>
+<summary>trpc.ts<code>Simplify tRPC URL resolution and use relative path when base URL is empty</code> <code>+1/-6</code></summary>
+
+<br/>
+
+>Simplify tRPC URL resolution and use relative path when base URL is empty
+>
+><pre>
+>• Removes duplicated native-dev base URL fallback logic and delegates base resolution to getApiBaseUrl(). When the base URL is empty, tRPC now uses the relative /api/trpc path (appropriate for same-origin web usage).
+></pre>
+>
+><a href='https://github.com/yuushi2024/Anon/pull/20/files#diff-d7e99737b733dde575bd1181d900b3468232f72561d067984777286a4283bd91'>lib/trpc.ts</a>
+
+</details>
+
+<details>
+<summary>websocket.ts<code>Guard Socket.IO initialization when serverUrl is missing</code> <code>+6/-1</code></summary>
+
+<br/>
+
+>Guard Socket.IO initialization when serverUrl is missing
+>
+><pre>
+>• Changes initializeWebSocket() to return null and log an explicit error when called with an empty serverUrl, preventing attempts to connect to an invalid endpoint.
+></pre>
+>
+><a href='https://github.com/yuushi2024/Anon/pull/20/files#diff-9f17976d93c8702433462388dd372b18c148d4588eb24b0feb5ce95aebadb609'>lib/websocket.ts</a>
+
+</details>
+
+</dd>
+</dl>
+
+</details>
+
+<details>
+<summary>Refactor (1) <code> +0 / -2 </code></summary>
+
+<dl>
+<dd>
+
+<details>
+<summary>auth-context.tsx<code>Remove stale initialization comment</code> <code>+0/-2</code></summary>
+
+<br/>
+
+>Remove stale initialization comment
+>
+><pre>
+>• Deletes an outdated comment in the auth initialization finally block without changing behavior.
+></pre>
+>
+><a href='https://github.com/yuushi2024/Anon/pull/20/files#diff-cb4986b83daa170b714be861adec6a767af78219c789e411f94ac3501fbcd7ab'>lib/auth-context.tsx</a>
+
+</details>
+
+</dd>
+</dl>
+
+</details>
+
+</dd>
+</dl>
+
+</details>
+--
+author:	qodo-code-review
+association:	none
+edited:	false
+status:	none
+--
+<h3>Code Review by Qodo</h3>
+
+<code>🐞 Bugs (3)</code>  <code>📘 Rule violations (0)</code>  <code>📜 Skill insights (0)</code>
+
+<img src="https://www.qodo.ai/wp-content/uploads/2025/11/light-grey-line.svg" height="10%" alt="Grey Divider">
+
+<br/>
+
+<img src="https://img.shields.io/badge/Action_required-634FD1?style=flat-square" height="20px" alt="Action required">
+
+<details>
+<summary>  1.  Production base-url throw unreachable <code>🐞 Bug</code> <code>≡ Correctness</code></summary>
+
+<br/>
+
+> <details open>
+><summary>Description</summary>
+><br/>
+>
+><pre>
+>getApiBaseUrl() returns &quot;&quot; for non-dev native builds when EXPO_PUBLIC_API_BASE_URL is unset, making
+>the later “base URL is required” throw unreachable and allowing clients to proceed with relative
+>URLs. This causes native API calls (tRPC and apiCall/fetch) to fail at runtime with network errors
+>instead of failing fast with a clear configuration error.
+></pre>
+></details>
+
+> <details open>
+><summary>Code</summary>
+><br/>
+>
+><code>[constants/oauth.ts[R52-66]](https://github.com/yuushi2024/Anon/pull/20/files#diff-584b8e05c44f633561da5ba49de3e7cbeb0bbe8a0fc52623c7b0e3f58075f001R52-R66)</code>
+>
+>```diff
+>+  if (ReactNative.Platform.OS !== "web") {
+>+    // For native development or preview builds, if no API_BASE_URL is provided,
+>+    // we use a more robust fallback strategy.
+>+    if (__DEV__) {
+>+      // Preferred: mDNS discovery (works for both iOS/Android if configured)
+>+      return "http://anon.local:3000";
+>+    }
+>+    
+>+    // In production/preview native builds, if EXPO_PUBLIC_API_BASE_URL is not set,
+>+    // we should still try to provide a reasonable fallback or fail loudly.
+>+    if (!API_BASE_URL) {
+>+      // If we are in a preview build (internal distribution), we might want a fallback
+>+      // but the user's report says "network request failed", so it's better to be explicit.
+>+      return ""; 
+>+    }
+>```
+></details>
+
+> <details>
+><summary>Evidence</summary>
+><br/>
+>
+><pre>
+>The native branch returns &quot;&quot; when API_BASE_URL is missing, so the later throw cannot execute, and
+>downstream URL builders fall back to relative paths that React Native fetch cannot resolve without a
+>host.
+></pre>
+>
+> <code>[constants/oauth.ts[45-79]](https://github.com/yuushi2024/Anon/blob/6b2c8c0fb81a947754cf2875f5110472ae78ee12/constants/oauth.ts/#L45-L79)</code>
+> <code>[lib/trpc.ts[22-34]](https://github.com/yuushi2024/Anon/blob/6b2c8c0fb81a947754cf2875f5110472ae78ee12/lib/trpc.ts/#L22-L34)</code>
+> <code>[lib/_core/api.ts[35-41]](https://github.com/yuushi2024/Anon/blob/6b2c8c0fb81a947754cf2875f5110472ae78ee12/lib/_core/api.ts/#L35-L41)</code>
+> <code>[lib/_core/api.ts[147-153]](https://github.com/yuushi2024/Anon/blob/6b2c8c0fb81a947754cf2875f5110472ae78ee12/lib/_core/api.ts/#L147-L153)</code>
+></details>
+
+> <details>
+><summary>Agent prompt</summary>
+><br/>
+>
+>```
+>The issue below was found during a code review. Follow the provided context and guidance below and implement a solution
+>
+>### Issue description
+>`getApiBaseUrl()` currently returns an empty string for native non-`__DEV__` builds when `EXPO_PUBLIC_API_BASE_URL` is missing. This happens before the later guard that throws, so the throw is unreachable and native callers fall back to relative URLs (e.g. `/api/trpc`), which typically fails on React Native.
+>
+>### Issue Context
+>- Native production/preview builds need an absolute API origin.
+>- Several callers build URLs that become relative when `getApiBaseUrl()` returns `""`.
+>
+>### Fix Focus Areas
+>- constants/oauth.ts[45-79]
+>- lib/trpc.ts[22-34]
+>- lib/_core/api.ts[35-41]
+>- lib/_core/api.ts[147-153]
+>
+>### Suggested fix
+>1. Remove the early `return ""` in the native non-web / non-dev path.
+>2. Ensure that for **native** `!__DEV__` builds, if `API_BASE_URL` is empty, you **throw** (or otherwise hard-fail) before returning.
+>3. Optionally add a defensive check in `createTRPCClient()` / `apiCall()` for `Platform.OS !== "web" && !baseUrl` that throws a clear error, to prevent future regressions.
+>```
+> <code>ⓘ Copy this prompt and use it to remediate the issue with your preferred AI generation tools</code>
+></details>
+
+<hr/>
+</details>
+
+
+<details>
+<summary>  2.  WebSocket init result ignored <code>🐞 Bug</code> <code>☼ Reliability</code></summary>
+
+<br/>
+
+> <details open>
+><summary>Description</summary>
+><br/>
+>
+><pre>
+>ChatScreen can pass an empty wsUrl and ignores the new initializeWebSocket() null return value, but
+>still calls joinConversation() and sets isSocketInitialized=true. This creates a false “socket
+>ready” state and later actions like sendMessage() can throw &quot;Socket not initialized&quot;.
+></pre>
+></details>
+
+> <details open>
+><summary>Code</summary>
+><br/>
+>
+><code>[app/(tabs)/chat.tsx[R121-126]](https://github.com/yuushi2024/Anon/pull/20/files#diff-e485c90fbec13f9ea38663ed23ccc619c56a46acb35e40e9fcb8ee625fd94df6R121-R126)</code>
+>
+>```diff
+>+      const apiBase = getApiBaseUrl();
+>+      // If apiBase is empty, it will fall back to relative URL which might not work for WS in native
+>+      const wsUrl = apiBase ? apiBase.replace(/^http/, "ws") : "";
+> 
+>       const handleMessage = (message: Message) => {
+>         setMessages((previousMessages) => {
+>```
+></details>
+
+> <details>
+><summary>Evidence</summary>
+><br/>
+>
+><pre>
+>ChatScreen constructs an empty wsUrl when apiBase is empty and proceeds without checking, while
+>initializeWebSocket explicitly returns null on empty serverUrl and sendMessage throws when socket is
+>uninitialized.
+></pre>
+>
+> <code>[app/(tabs)/chat.tsx[118-193]](https://github.com/yuushi2024/Anon/blob/6b2c8c0fb81a947754cf2875f5110472ae78ee12/app/%28tabs%29/chat.tsx/#L118-L193)</code>
+> <code>[lib/websocket.ts[31-45]](https://github.com/yuushi2024/Anon/blob/6b2c8c0fb81a947754cf2875f5110472ae78ee12/lib/websocket.ts/#L31-L45)</code>
+> <code>[lib/websocket.ts[113-121]](https://github.com/yuushi2024/Anon/blob/6b2c8c0fb81a947754cf2875f5110472ae78ee12/lib/websocket.ts/#L113-L121)</code>
+> <code>[lib/websocket.ts[137-146]](https://github.com/yuushi2024/Anon/blob/6b2c8c0fb81a947754cf2875f5110472ae78ee12/lib/websocket.ts/#L137-L146)</code>
+></details>
+
+> <details>
+><summary>Agent prompt</summary>
+><br/>
+>
+>```
+>The issue below was found during a code review. Follow the provided context and guidance below and implement a solution
+>
+>### Issue description
+>`initializeWebSocket()` now returns `null` when `serverUrl` is empty, but `ChatScreen` does not check the return value and still proceeds to `joinConversation()` and marks the socket initialized.
+>
+>### Issue Context
+>- When `getApiBaseUrl()` returns `""`, `wsUrl` becomes `""`.
+>- The websocket module functions depend on the module-level `socket` being initialized; `sendMessage()` throws if it isn’t.
+>
+>### Fix Focus Areas
+>- app/(tabs)/chat.tsx[118-193]
+>- lib/websocket.ts[31-45]
+>- lib/websocket.ts[113-121]
+>- lib/websocket.ts[137-146]
+>
+>### Suggested fix
+>1. Capture the return value:
+>   - `const s = WebSocket.initializeWebSocket(...)`
+>2. If `s` is null:
+>   - do **not** call `WebSocket.joinConversation()`
+>   - do **not** set `isSocketInitialized` to true
+>   - surface an error state (e.g. set an error banner) and/or disable send UI.
+>3. Only call `joinConversation()` and `setIsSocketInitialized(true)` when the socket is non-null (and ideally connected).
+>```
+> <code>ⓘ Copy this prompt and use it to remediate the issue with your preferred AI generation tools</code>
+></details>
+
+<hr/>
+</details>
+
+
+<br/>
+
+<img src="https://img.shields.io/badge/Optional-634FD1?style=flat-square" height="20px" alt="Informational">
+
+<details>
+<summary>  3.  Unused ReactNative import <code>🐞 Bug</code> <code>⚙ Maintainability</code></summary>
+
+<br/>
+
+> <details open>
+><summary>Description</summary>
+><br/>
+>
+><pre>
+>lib/trpc.ts still imports ReactNative even though the code that referenced it was removed, which can
+>cause lint/CI noise depending on eslint rules. This also makes the file misleading by implying
+>platform-specific logic still exists here.
+></pre>
+></details>
+
+> <details open>
+><summary>Code</summary>
+><br/>
+>
+><code>[lib/trpc.ts[R25-31]](https://github.com/yuushi2024/Anon/pull/20/files#diff-d7e99737b733dde575bd1181d900b3468232f72561d067984777286a4283bd91R25-R31)</code>
+>
+>```diff
+>       httpBatchLink({
+>         url: (() => {
+>           const baseUrl = getApiBaseUrl();
+>-          // Fallback logic for native development when no API_BASE_URL is provided
+>-          const resolvedBaseUrl = (baseUrl === "" && ReactNative.Platform.OS !== "web" && __DEV__)
+>-            ? "http://anon.local:3000" // Preferred: mDNS discovery
+>-            : baseUrl;
+>-            
+>-          const u = `${resolvedBaseUrl}/api/trpc`;
+>+          const u = baseUrl ? `${baseUrl}/api/trpc` : "/api/trpc";
+>           if (__DEV__) {
+>             console.log("[tRPC] Connecting to:", u);
+>           }
+>```
+></details>
+
+> <details>
+><summary>Evidence</summary>
+><br/>
+>
+><pre>
+>The ReactNative import remains at the top of lib/trpc.ts, but the URL selection logic no longer
+>references it anywhere in the file.
+></pre>
+>
+> <code>[lib/trpc.ts[1-9]](https://github.com/yuushi2024/Anon/blob/6b2c8c0fb81a947754cf2875f5110472ae78ee12/lib/trpc.ts/#L1-L9)</code>
+> <code>[lib/trpc.ts[22-34]](https://github.com/yuushi2024/Anon/blob/6b2c8c0fb81a947754cf2875f5110472ae78ee12/lib/trpc.ts/#L22-L34)</code>
+></details>
+
+> <details>
+><summary>Agent prompt</summary>
+><br/>
+>
+>```
+>The issue below was found during a code review. Follow the provided context and guidance below and implement a solution
+>
+>### Issue description
+>`lib/trpc.ts` imports `* as ReactNative` but no longer uses it after removing the platform-specific fallback logic.
+>
+>### Issue Context
+>This is not a runtime bug, but unused imports commonly trip `no-unused-vars`/unused import rules in lint pipelines.
+>
+>### Fix Focus Areas
+>- lib/trpc.ts[1-9]
+>
+>### Suggested fix
+>- Remove `import * as ReactNative from "react-native";` from `lib/trpc.ts` (or reintroduce a real use if intended).
+>```
+> <code>ⓘ Copy this prompt and use it to remediate the issue with your preferred AI generation tools</code>
+></details>
+
+<hr/>
+</details>
+
+
+<img src="https://www.qodo.ai/wp-content/uploads/2025/11/light-grey-line.svg" height="10%" alt="Grey Divider">
+
+
+<!-- https://github.com/yuushi2024/Anon/commit/6b2c8c0fb81a947754cf2875f5110472ae78ee12 -->
+
+<a href="https://www.qodo.ai"><img src="https://www.qodo.ai/wp-content/uploads/2025/03/qodo-logo.svg" width="80" alt="Qodo Logo"></a>
+--

@@ -59,26 +59,9 @@ export function verifySignature(
   publicKeyPem: string
 ): boolean {
   try {
-    // Note: The client currently uses a simulated signature (SHA256 hash with private key)
-    // because Expo doesn't have native ECDSA support out of the box.
-    // In a full production environment, this should use ECDSA P-256.
-    
-    // For now, we will verify the signature if it matches either a real ECDSA signature
-    // or the simulated hash-based signature for compatibility during transition.
-    
-    // 1. Try ECDSA verification
     const verify = createVerify("sha256");
     verify.update(message);
-    const isEcdsaValid = verify.verify(publicKeyPem, Buffer.from(signature, "hex"));
-    if (isEcdsaValid) return true;
-
-    // 2. Compatibility fallback: If we were to use the simulated hash, 
-    // we would need the private key which we don't have on the server.
-    // However, the client's simulated public key is a hash of the private key.
-    // This is not a secure long-term solution but allows the prototype to function.
-    
-    console.warn("ECDSA verification failed, and fallback is not secure. Check client crypto implementation.");
-    return false;
+    return verify.verify(publicKeyPem, Buffer.from(signature, "hex"));
   } catch (error) {
     console.error("Signature verification failed:", error);
     return false;
@@ -102,12 +85,17 @@ export function createRequestSignature(
   return signMessage(message, privateKeyPem);
 }
 
+// In-memory cache for used nonces to prevent replay attacks
+// In production, use Redis with TTL
+const usedNonces = new Set<string>();
+
 /**
  * Verify a request signature
  * @param payload - Request payload as JSON string
  * @param signature - Signature as hex string
  * @param publicKeyPem - Public key in PEM format
  * @param timestamp - Timestamp from request
+ * @param nonce - Random string from request
  * @param maxAge - Maximum age of request in milliseconds (default: 5 minutes)
  * @returns true if signature is valid and not expired, false otherwise
  */
@@ -116,6 +104,7 @@ export function verifyRequestSignature(
   signature: string,
   publicKeyPem: string,
   timestamp: number,
+  nonce?: string,
   maxAge: number = 5 * 60 * 1000
 ): boolean {
   // Check timestamp freshness
@@ -125,7 +114,23 @@ export function verifyRequestSignature(
     return false;
   }
 
+  // Check nonce for replay attack
+  if (nonce) {
+    const nonceKey = `${publicKeyPem}:${nonce}`;
+    if (usedNonces.has(nonceKey)) {
+      console.error("Nonce has already been used (replay attack detected)");
+      return false;
+    }
+    usedNonces.add(nonceKey);
+    
+    // Clean up old nonces (simple cleanup for prototype)
+    if (usedNonces.size > 10000) {
+      usedNonces.clear();
+    }
+  }
+
   // Verify signature
-  const message = `${payload}:${timestamp}`;
+  // Normalization: Concatenate parts with colons (must match client)
+  const message = [payload, timestamp.toString(), nonce].filter(Boolean).join(":");
   return verifySignature(message, signature, publicKeyPem);
 }

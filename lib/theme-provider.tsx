@@ -1,8 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Appearance, View, useColorScheme as useSystemColorScheme } from "react-native";
 import { colorScheme as nativewindColorScheme, vars } from "nativewind";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { SchemeColors, type ColorScheme } from "@/constants/theme";
+
+const STORAGE_KEY_DARK_MODE = "settings_dark_mode";
+
+function hexToRgb(hex: string): string {
+  const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+  const fullHex = hex.replace(shorthandRegex, (m, r, g, b) => r + r + g + g + b + b);
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(fullHex);
+  return result
+    ? `${parseInt(result[1], 16)} ${parseInt(result[2], 16)} ${parseInt(result[3], 16)}`
+    : "";
+}
 
 type ThemeContextValue = {
   colorScheme: ColorScheme;
@@ -15,6 +27,27 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useSystemColorScheme() ?? "light";
   const [colorScheme, setColorSchemeState] = useState<ColorScheme>(systemScheme);
 
+  // Load persisted color scheme from AsyncStorage on mount
+  useEffect(() => {
+    let isMounted = true;
+    const loadPersistedScheme = async () => {
+      try {
+        const saved = await AsyncStorage.getItem(STORAGE_KEY_DARK_MODE);
+        if (!isMounted) return;
+        if (saved === "dark" || saved === "light") {
+          setColorSchemeState(saved);
+          // applyScheme is handled by the useEffect watching [colorScheme]
+        }
+      } catch (error) {
+        console.error("[ThemeProvider] Failed to load persisted color scheme:", error);
+      }
+    };
+    void loadPersistedScheme();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const applyScheme = useCallback((scheme: ColorScheme) => {
     nativewindColorScheme.set(scheme);
     Appearance.setColorScheme?.(scheme);
@@ -24,16 +57,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       root.classList.toggle("dark", scheme === "dark");
       const palette = SchemeColors[scheme];
       Object.entries(palette).forEach(([token, value]) => {
-        root.style.setProperty(`--color-${token}`, value);
+        root.style.setProperty(`--color-${token}`, hexToRgb(value));
       });
     }
   }, []);
 
   const setColorScheme = useCallback((scheme: ColorScheme) => {
     setColorSchemeState(scheme);
-    applyScheme(scheme);
-  }, [applyScheme]);
+    // Persist to AsyncStorage (works on both native and web)
+    AsyncStorage.setItem(STORAGE_KEY_DARK_MODE, scheme).catch((error) => {
+      console.error("[ThemeProvider] Failed to persist color scheme:", error);
+    });
+  }, []);
 
+  // Single source of truth for applying the theme: whenever colorScheme state changes
   useEffect(() => {
     applyScheme(colorScheme);
   }, [applyScheme, colorScheme]);
@@ -41,15 +78,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const themeVariables = useMemo(
     () =>
       vars({
-        "color-primary": SchemeColors[colorScheme].primary,
-        "color-background": SchemeColors[colorScheme].background,
-        "color-surface": SchemeColors[colorScheme].surface,
-        "color-foreground": SchemeColors[colorScheme].foreground,
-        "color-muted": SchemeColors[colorScheme].muted,
-        "color-border": SchemeColors[colorScheme].border,
-        "color-success": SchemeColors[colorScheme].success,
-        "color-warning": SchemeColors[colorScheme].warning,
-        "color-error": SchemeColors[colorScheme].error,
+        "color-primary": hexToRgb(SchemeColors[colorScheme].primary),
+        "color-background": hexToRgb(SchemeColors[colorScheme].background),
+        "color-surface": hexToRgb(SchemeColors[colorScheme].surface),
+        "color-foreground": hexToRgb(SchemeColors[colorScheme].foreground),
+        "color-muted": hexToRgb(SchemeColors[colorScheme].muted),
+        "color-border": hexToRgb(SchemeColors[colorScheme].border),
+        "color-success": hexToRgb(SchemeColors[colorScheme].success),
+        "color-warning": hexToRgb(SchemeColors[colorScheme].warning),
+        "color-error": hexToRgb(SchemeColors[colorScheme].error),
       }),
     [colorScheme],
   );
@@ -61,11 +98,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }),
     [colorScheme, setColorScheme],
   );
-  console.log(value, themeVariables)
 
   return (
     <ThemeContext.Provider value={value}>
-      <View style={[{ flex: 1 }, themeVariables]}>{children}</View>
+      <View
+        style={[
+          { flex: 1, backgroundColor: SchemeColors[colorScheme].background },
+          themeVariables,
+        ]}
+      >
+        {children}
+      </View>
     </ThemeContext.Provider>
   );
 }

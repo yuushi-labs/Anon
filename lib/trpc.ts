@@ -3,10 +3,7 @@ import { httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
 import type { AppRouter } from "@/server/routers";
 import { getApiBaseUrl } from "@/constants/oauth";
-import * as Auth from "@/lib/_core/auth";
-
-/**
- * tRPC React client for type-safe API calls.
+import * as Auth from "@/lib/_core/auth"; API calls.
  *
  * IMPORTANT (tRPC v11): The `transformer` must be inside `httpBatchLink`,
  * NOT at the root createClient level. This ensures client and server
@@ -22,7 +19,16 @@ export function createTRPCClient() {
   return trpc.createClient({
     links: [
       httpBatchLink({
-        url: `${getApiBaseUrl()}/api/trpc`,
+        url: (() => {
+          const baseUrl = getApiBaseUrl();
+          if (!baseUrl && typeof window === 'undefined') {
+             // Native環境でbaseUrlがない場合は、相対パスの fetch は Network request failed になるため
+             console.error("[tRPC] API Base URL is missing in native environment. Requests will fail.");
+          }
+          const u = baseUrl ? `${baseUrl}/api/trpc` : "/api/trpc";
+          console.log("[tRPC] Connecting to:", u, "BaseURL:", baseUrl || "(empty)");
+          return u;
+        })(),
         // tRPC v11: transformer MUST be inside httpBatchLink, not at root
         transformer: superjson,
         async headers() {
