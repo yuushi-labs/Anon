@@ -24,10 +24,12 @@ export function createTRPCClient() {
       httpBatchLink({
         url: (() => {
           const baseUrl = getApiBaseUrl();
-          const u = baseUrl ? `${baseUrl}/api/trpc` : "/api/trpc";
-          if (__DEV__) {
-            console.log("[tRPC] Connecting to:", u);
+          if (!baseUrl && typeof window === 'undefined') {
+             // Native環境でbaseUrlがない場合は、相対パスの fetch は Network request failed になるため
+             console.error("[tRPC] API Base URL is missing in native environment. Requests will fail.");
           }
+          const u = baseUrl ? `${baseUrl}/api/trpc` : "/api/trpc";
+          console.log("[tRPC] Connecting to:", u, "BaseURL:", baseUrl || "(empty)");
           return u;
         })(),
         // tRPC v11: transformer MUST be inside httpBatchLink, not at root

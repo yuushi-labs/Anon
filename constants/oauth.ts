@@ -69,6 +69,12 @@ export function getApiBaseUrl(): string {
     }
   }
 
+  // EAS Buildや本番環境でAPI_BASE_URLが設定されていない場合はエラーを投げるか明示的なログを出す
+  if (ReactNative.Platform.OS !== "web") {
+    console.error("[API] Critical Error: EXPO_PUBLIC_API_BASE_URL is not set. Native apps require an absolute URL to connect to the API.");
+    // 開発中のデバッグ用にエラーを投げることも可能ですが、ここでは空文字を返して後続の処理でエラーハンドリングさせます
+  }
+
   // Fallback to empty (will use relative URL for web)
   return "";
 }

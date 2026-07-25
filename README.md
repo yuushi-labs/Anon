@@ -161,6 +161,24 @@ pnpm ios
 
 ExpoプロジェクトでAndroid APKを作成する最も推奨される方法は、**EAS Build** を利用することです。EAS Buildは、クラウド上でアプリのバイナリをビルドし、Google Play Storeへの提出準備ができた状態のAPKやAAB (Android App Bundle) を生成します。
 
+> **⚠️ EAS Buildでの「Network request failed」エラーについて:**
+> EAS Buildで作成したAPKで、登録ボタン押下時に「Network request failed」が発生する場合、**APIのベースURLが正しく設定されていない**ことが原因です。
+> Expo Goでは開発環境のIPアドレスが自動的にフォールバックとして使用されますが、EAS Build（本番ビルド）では明示的な設定が必要です。URLが設定されていない場合、アプリは相対パス(`/api/trpc/...`)で通信しようとし、ネイティブ環境ではこれが解決できずにエラーとなります。
+> 
+> **解決方法:**
+> `eas.json`の対象プロファイル（例: `preview`や`production`）の`env`セクションに、`EXPO_PUBLIC_API_BASE_URL`を設定してください。
+> 例:
+> ```json
+> "build": {
+>   "preview": {
+>     "android": { "buildType": "apk" },
+>     "env": {
+>       "EXPO_PUBLIC_API_BASE_URL": "http://あなたのサーバーのIP:3000"
+>     }
+>   }
+> }
+> ```
+
 1.  **EAS CLIのインストール**
     ```bash
     pnpm add -g eas-cli

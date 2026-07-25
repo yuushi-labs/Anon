@@ -23,10 +23,16 @@ export default function OnboardingScreen() {
       await register(username.trim(), publicId.trim());
       router.replace("/(tabs)");
     } catch (error) {
-      Alert.alert(
-        "登録エラー",
-        error instanceof Error ? error.message : "登録に失敗しました"
-      );
+      const errorMessage = error instanceof Error ? error.message : "登録に失敗しました";
+      
+      // EAS Build等でAPI Base URLが設定されていない場合のNetwork request failedを検知
+      let detailedMessage = errorMessage;
+      if (errorMessage.includes("Network request failed") || errorMessage.includes("Failed to fetch")) {
+         detailedMessage += "\n\n(デバッグ情報: EXPO_PUBLIC_API_BASE_URLが正しく設定されていない可能性があります。EAS Buildの環境変数設定を確認してください。)";
+         console.error("[Onboarding] Network Error detected. Check EXPO_PUBLIC_API_BASE_URL in eas.json or Expo dashboard.");
+      }
+
+      Alert.alert("登録エラー", detailedMessage);
     } finally {
       setIsLoading(false);
     }
