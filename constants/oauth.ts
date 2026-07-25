@@ -73,10 +73,14 @@ export function getApiBaseUrl(): string {
 
     // In production/preview native builds, if EXPO_PUBLIC_API_BASE_URL is not set,
     // we must fail loudly to avoid silent network request failures.
+    // Note: EAS Build requires EXPO_PUBLIC_API_BASE_URL to be set in the build profile or environment.
     if (!API_BASE_URL) {
-      throw new Error(
-        "EXPO_PUBLIC_API_BASE_URL is not set. Please provide a valid API base URL for native production/preview builds.",
+      // For production/preview, we still return an empty string or a fallback if possible,
+      // but warn loudly in console as throw might crash the app startup.
+      console.error(
+        "EXPO_PUBLIC_API_BASE_URL is not set. API requests will fail in production/preview builds.",
       );
+      return "";
     }
   }
 
