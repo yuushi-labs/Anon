@@ -1,13 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  TextInput,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-} from "react-native";
+import { View, Text, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/lib/auth-context";
@@ -190,6 +182,13 @@ export default function ChatScreen() {
         }
       } else {
         console.error("[Chat] Failed to initialize WebSocket: socket is null");
+        if (isActive) {
+          setIsSocketInitialized(false);
+          Alert.alert(
+            "接続エラー",
+            "チャットサーバーへの接続に失敗しました。ネットワーク接続を確認して、再度お試しください。"
+          );
+        }
       }
     };
 
@@ -203,6 +202,11 @@ export default function ChatScreen() {
 
   const handleSendMessage = async () => {
     if (!inputText.trim() || !authState.user) return;
+
+    if (!isSocketInitialized) {
+      Alert.alert("エラー", "チャットに接続されていません。しばらく待ってから再度お試しください。");
+      return;
+    }
 
     try {
       setIsSending(true);
@@ -297,14 +301,14 @@ export default function ChatScreen() {
             placeholderTextColor="#999"
             value={inputText}
             onChangeText={setInputText}
-            editable={!isSending}
+            editable={!isSending && isSocketInitialized}
             multiline
           />
           <TouchableOpacity
             onPress={handleSendMessage}
-            disabled={!inputText.trim() || isSending}
+            disabled={!inputText.trim() || isSending || !isSocketInitialized}
             className={`w-10 h-10 rounded-full items-center justify-center ${
-              !inputText.trim() || isSending ? "bg-primary/50" : "bg-primary"
+              !inputText.trim() || isSending || !isSocketInitialized ? "bg-primary/50" : "bg-primary"
             }`}
           >
             <Text className="text-white text-lg font-bold">→</Text>
