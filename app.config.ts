@@ -73,9 +73,9 @@ const config: ExpoConfig = {
     softwareKeyboardLayoutMode: "resize",
     package: env.androidPackage,
     permissions: ["POST_NOTIFICATIONS"],
-    // Allow cleartext traffic in development to allow connecting to local dev servers.
-    // We check multiple environment indicators to ensure it's enabled in dev builds.
-    usesCleartextTraffic: process.env.NODE_ENV !== "production" || !!process.env.EXPO_PUBLIC_API_BASE_URL?.startsWith("http://"),
+    // Allow cleartext traffic only when necessary (local dev or non-HTTPS production).
+    // Note: EAS Build (APK) will correctly evaluate this if the environment variable is present at build time.
+    usesCleartextTraffic: process.env.NODE_ENV === "development" || !!process.env.EXPO_PUBLIC_API_BASE_URL?.startsWith("http://"),
     intentFilters: [
       {
         action: "VIEW",
