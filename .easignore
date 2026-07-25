@@ -1,0 +1,16 @@
+# EAS Build ignore file
+# This file defines which files are uploaded to EAS Build servers.
+# By default, EAS follows .gitignore. We override it here to allow .env files.
+
+# Keep standard ignores
+node_modules/
+.expo/
+dist/
+web-build/
+/ios
+/android
+
+# Allow .env files to be uploaded so they can be loaded during the build
+# (They are still ignored by git via .gitignore)
+!.env
+!.env.local
