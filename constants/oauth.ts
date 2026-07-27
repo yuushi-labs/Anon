@@ -33,55 +33,45 @@ export const API_BASE_URL = env.apiBaseUrl;
  * URL pattern: https://PORT-sandboxid.region.domain
  */
 export function getApiBaseUrl(): string {
-  // On web, derive from current hostname dynamically
-  if (ReactNative.Platform.OS === "web" && typeof window !== "undefined" && window.location) {
-    const { protocol, hostname } = window.location;
-    // Pattern for sandbox: 8081-sandboxid.region.domain -> 3000-sandboxid.region.domain
-    const apiHostname = hostname.replace(/^8081-/, "3000-");
-    if (apiHostname !== hostname) {
-      return `${protocol}//${apiHostname}`;
+  // On web, derive from current hostname dynamically.
+  if (ReactNative.Platform.OS === "web") {
+    if (typeof window !== "undefined" && window.location) {
+      const { protocol, hostname } = window.location;
+      // Pattern for sandbox: 8081-sandboxid.region.domain -> 3000-sandboxid.region.domain
+      const apiHostname = hostname.replace(/^8081-/, "3000-");
+      if (apiHostname !== hostname) {
+        return `${protocol}//${apiHostname}`;
+      }
+      // For normal Web access (localhost, IP address like 192.168.x.x etc.)
+      return `${protocol}//${hostname}:3000`;
     }
-    // For normal Web access (localhost, IP address like 192.168.x.x etc.)
-    return `${protocol}//${hostname}:3000`;
+
+    return API_BASE_URL ? API_BASE_URL.replace(/\/$/, "") : "";
   }
 
-    // If API_BASE_URL is set, use it (fallback for native)
+  // Native apps always need an absolute API origin. Prefer explicit build-time
+  // configuration, falling back to the Expo host only for development builds.
   if (API_BASE_URL) {
     return API_BASE_URL.replace(/\/$/, "");
   }
 
-  // Fallback for native platforms
-  if (ReactNative.Platform.OS !== "web") {
-    // If we have an explicit API_BASE_URL (from env), it's already handled above.
-    
-    // For native development (__DEV__ is true when running via Expo Go/Dev Client),
-    // we try to derive the host from Metro.
-    if (__DEV__) {
-      const debuggerHost = Constants.expoConfig?.hostUri;
-      if (debuggerHost) {
-        try {
-          const url = new URL(`http://${debuggerHost}`);
-          return `http://${url.hostname}:3000`;
-        } catch {
-          const host = debuggerHost.split(":")[0];
-          return `http://${host}:3000`;
-        }
+  if (__DEV__) {
+    const debuggerHost = Constants.expoConfig?.hostUri;
+    if (debuggerHost) {
+      try {
+        const url = new URL(`http://${debuggerHost}`);
+        return `http://${url.hostname}:3000`;
+      } catch {
+        const host = debuggerHost.split(":")[0];
+        return `http://${host}:3000`;
       }
-      return "http://localhost:3000";
     }
+    return "http://localhost:3000";
   }
 
-  // EAS Buildや本番環境でAPI_BASE_URLが設定されていない場合は例外を投げる
-  if (ReactNative.Platform.OS !== "web") {
-    const errorMsg = "[API] Critical Error: EXPO_PUBLIC_API_BASE_URL is not set. Native apps require an absolute URL to connect to the API.";
-    console.error(errorMsg);
-    if (!__DEV__) {
-      throw new Error(errorMsg);
-    }
-  }
-
-  // Fallback to empty (will use relative URL for web)
-  return "";
+  throw new Error(
+    "[API] Critical Error: EXPO_PUBLIC_API_BASE_URL is not set. Native apps require an absolute URL to connect to the API.",
+  );
 }
 
 export const SESSION_TOKEN_KEY = "app_session_token";

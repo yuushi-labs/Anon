@@ -1,10 +1,12 @@
 import { createTRPCReact } from "@trpc/react-query";
 import { httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
+import { Platform } from "react-native";
 import type { AppRouter } from "@/server/routers";
 import { getApiBaseUrl } from "@/constants/oauth";
-import * as Auth from "@/lib/_core/auth"; 
- /**
+import * as Auth from "@/lib/_core/auth";
+
+/**
  * IMPORTANT (tRPC v11): The `transformer` must be inside `httpBatchLink`,
  * NOT at the root createClient level. This ensures client and server
  * use the same serialization format (superjson).
@@ -21,9 +23,10 @@ export function createTRPCClient() {
       httpBatchLink({
         url: (() => {
           const baseUrl = getApiBaseUrl();
-          if (!baseUrl && typeof window === 'undefined') {
-             // Native環境でbaseUrlがない場合は、相対パスの fetch は Network request failed になるため
-             console.error("[tRPC] API Base URL is missing in native environment. Requests will fail.");
+          if (Platform.OS !== "web" && !baseUrl) {
+            throw new Error(
+              "[tRPC] EXPO_PUBLIC_API_BASE_URL is required for native tRPC requests.",
+            );
           }
           const u = baseUrl ? `${baseUrl}/api/trpc` : "/api/trpc";
           console.log("[tRPC] Connecting to:", u, "BaseURL:", baseUrl || "(empty)");

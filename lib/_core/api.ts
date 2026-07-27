@@ -40,8 +40,9 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
   console.log("[API] Full URL:", url);
 
   if (Platform.OS !== "web" && !url.startsWith("http")) {
-    console.error("[API] Native app attempting to fetch a relative URL:", url);
-    console.error("[API] This will cause a 'Network request failed' error. Ensure EXPO_PUBLIC_API_BASE_URL is set.");
+    throw new Error(
+      "[API] EXPO_PUBLIC_API_BASE_URL is required for native API requests.",
+    );
   }
 
   try {
