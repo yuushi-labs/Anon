@@ -9,17 +9,14 @@ import {
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
-import { useAuth } from "@/lib/auth-context";
 import { trpc } from "@/lib/trpc";
 
 export default function ChatActionsScreen() {
   const router = useRouter();
-  const { conversationId, senderLabel, messageId } = useLocalSearchParams<{
-    conversationId: string;
+  const { senderLabel, messageId } = useLocalSearchParams<{
     senderLabel: string;
     messageId: string;
   }>();
-  const { state: authState } = useAuth();
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -27,7 +24,6 @@ export default function ChatActionsScreen() {
   const blockUserMutation = trpc.dm.blockUser.useMutation();
   const reportMessageMutation = trpc.dm.reportMessage.useMutation();
 
-  const convId = parseInt(conversationId || "0");
   const msgId = parseInt(messageId || "0");
 
   const handleBlockUser = async () => {

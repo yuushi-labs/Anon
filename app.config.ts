@@ -44,11 +44,6 @@ const config: ExpoConfig = {
   slug: env.appSlug,
   version: "1.0.0",
 
-  extra: {
-    eas: {
-      projectId: "25f4e431-0e3d-4ac9-a9b2-f104a98f1c72",
-    },
-  },
 
   orientation: "portrait",
   icon: "./assets/images/icon.png",
@@ -90,7 +85,7 @@ const config: ExpoConfig = {
         category: ["BROWSABLE", "DEFAULT"],
       },
     ],
-  },
+  } as NonNullable<ExpoConfig["android"]> & { usesCleartextTraffic: boolean },
   web: {
     bundler: "metro",
     output: "static",
@@ -141,6 +136,7 @@ const config: ExpoConfig = {
     reactCompiler: true,
   },
   extra: {
+    apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "",
     eas: {
       projectId: env.easProjectId,
     },

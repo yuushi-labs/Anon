@@ -5,7 +5,6 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
-  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
@@ -33,7 +32,6 @@ export default function DMListScreen() {
   const { state: authState } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
 
   const getConversationsQuery = trpc.dm.getConversations.useQuery(
     {},
@@ -43,7 +41,6 @@ export default function DMListScreen() {
   useEffect(() => {
     if (getConversationsQuery.data) {
       setConversations(getConversationsQuery.data);
-      setIsLoading(false);
     }
   }, [getConversationsQuery.data]);
 

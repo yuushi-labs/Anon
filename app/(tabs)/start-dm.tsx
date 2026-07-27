@@ -11,7 +11,6 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
-import { useAuth } from "@/lib/auth-context";
 import { trpc } from "@/lib/trpc";
 
 /** テキストをクリップボードにコピーし、共有APIがあれば共有も試みる */
@@ -39,21 +38,12 @@ async function shareOrCopy(message: string, link: string) {
 
 export default function StartDMScreen() {
   const router = useRouter();
-  const { state: authState } = useAuth();
   const [targetPublicId, setTargetPublicId] = useState("");
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [method, setMethod] = useState<"id" | "link">("id");
 
   const startConversationMutation = trpc.dm.startConversation.useMutation();
-
-  const handleSharePublicId = async () => {
-    if (!authState.user) return;
-    const origin = typeof window !== "undefined" ? window.location.origin : "https://dm.app";
-    const link = `${origin}/?publicId=${authState.user.publicId}`;
-    const message = `匿名DMで私とチャットしましょう！\nID: ${authState.user.publicId}\nリンク: ${link}`;
-    await shareOrCopy(message, link);
-  };
 
   const handleStartDM = async () => {
     if (!targetPublicId.trim()) {
