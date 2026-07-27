@@ -70,10 +70,14 @@ describe("read receipt WebSocket events", () => {
     const sent = markMessagesAsRead(12, [33, 33, 34, Number.NaN]);
 
     expect(sent).toBe(true);
-    expect(socketMock.emit).toHaveBeenCalledWith("mark_messages_read", {
-      conversationId: 12,
-      messageIds: [33, 34],
-    });
+    expect(socketMock.emit).toHaveBeenCalledWith(
+      "mark_messages_read",
+      {
+        conversationId: 12,
+        messageIds: [33, 34],
+      },
+      expect.any(Function),
+    );
   });
 
   it("does not send a read receipt before a socket is initialized", () => {
