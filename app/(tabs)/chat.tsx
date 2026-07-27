@@ -113,10 +113,25 @@ export default function ChatScreen() {
 
     let isActive = true;
     const setup = async () => {
-      const token = await getSessionToken();
-      const apiBase = getApiBaseUrl();
-      // If apiBase is empty, it will fall back to relative URL which might not work for WS in native
-      const wsUrl = apiBase ? apiBase.replace(/^http/, "ws") : "";
+      let token = "";
+      let wsUrl = "";
+      try {
+        token = (await getSessionToken()) || "";
+        const apiBase = getApiBaseUrl();
+        wsUrl = apiBase.replace(/^http/, "ws");
+      } catch (error) {
+        console.error("[Chat] Failed to resolve WebSocket URL:", error);
+        if (isActive) {
+          setIsSocketInitialized(false);
+          Alert.alert(
+            "接続設定エラー",
+            error instanceof Error
+              ? error.message
+              : "APIサーバーの接続先が設定されていません。",
+          );
+        }
+        return;
+      }
 
       const handleMessage = (message: Message) => {
         setMessages((previousMessages) => {
@@ -166,7 +181,7 @@ export default function ChatScreen() {
 
       const socket = WebSocket.initializeWebSocket(
         wsUrl,
-        token || "",
+        token,
         currentUser.publicId,
         handleMessage,
         handleMessagesRead,
