@@ -39,10 +39,18 @@ const env = {
   easProjectId: "f8b9e6e4-4d1a-4f5a-9b8a-1c2d3e4f5a6b", // Placeholder ID for local development
 };
 
+const fallbackVersion = "1.0.0";
+const ciVersionName = process.env.VERSION_NAME?.trim();
+const ciVersionCodeRaw = process.env.VERSION_CODE?.trim();
+const parsedCiVersionCode = ciVersionCodeRaw ? Number.parseInt(ciVersionCodeRaw, 10) : Number.NaN;
+const appVersion = ciVersionName && ciVersionName.length > 0 ? ciVersionName : fallbackVersion;
+const androidVersionCode =
+  Number.isInteger(parsedCiVersionCode) && parsedCiVersionCode > 0 ? parsedCiVersionCode : 1;
+
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
-  version: "1.0.0",
+  version: appVersion,
 
 
   orientation: "portrait",
@@ -68,6 +76,7 @@ const config: ExpoConfig = {
     predictiveBackGestureEnabled: false,
     softwareKeyboardLayoutMode: "resize",
     package: env.androidPackage,
+    versionCode: androidVersionCode,
     permissions: ["POST_NOTIFICATIONS"],
     // Allow cleartext traffic only when necessary (local dev or non-HTTPS production).
     // Note: EAS Build (APK) will correctly evaluate this if the environment variable is present at build time.
