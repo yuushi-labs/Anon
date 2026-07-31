@@ -1,4 +1,5 @@
 import { io, Socket } from "socket.io-client";
+import { captureException } from "./_core/sentry";
 
 export interface Message {
   id: number;
@@ -94,6 +95,14 @@ export function initializeWebSocket(
 
   socket.on("error", (error: { message?: string }) => {
     console.error("[WebSocket] Error:", error);
+    captureException(
+      error?.message ? new Error(error.message) : new Error("WebSocket error"),
+      {
+        area: "websocket",
+        serverUrl,
+        publicId,
+      },
+    );
     onError(error.message || "WebSocket error");
   });
 

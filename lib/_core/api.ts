@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import { getApiBaseUrl } from "@/constants/oauth";
 import * as Auth from "./auth";
+import { captureException } from "./sentry";
 
 type ApiResponse<T> = {
   data?: T;
@@ -40,6 +41,16 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
   console.log("[API] Full URL:", url);
 
   if (Platform.OS !== "web" && !url.startsWith("http")) {
+    captureException(
+      new Error(
+        "[API] EXPO_PUBLIC_API_BASE_URL is required for native API requests.",
+      ),
+      {
+        area: "apiCall",
+        endpoint,
+        url,
+      },
+    );
     throw new Error(
       "[API] EXPO_PUBLIC_API_BASE_URL is required for native API requests.",
     );
@@ -88,6 +99,11 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
     return (text ? JSON.parse(text) : {}) as T;
   } catch (error) {
     console.error("[API] Request failed:", error);
+    captureException(error, {
+      area: "apiCall",
+      endpoint,
+      url,
+    });
     if (error instanceof Error) {
       throw error;
     }
@@ -143,6 +159,9 @@ export async function getMe(): Promise<{
     return result.user || null;
   } catch (error) {
     console.error("[API] getMe failed:", error);
+    captureException(error, {
+      area: "getMe",
+    });
     return null;
   }
 }
@@ -173,6 +192,10 @@ export async function establishSession(token: string): Promise<boolean> {
     return true;
   } catch (error) {
     console.error("[API] establishSession error:", error);
+    captureException(error, {
+      area: "establishSession",
+      tokenPresent: Boolean(token),
+    });
     return false;
   }
 }

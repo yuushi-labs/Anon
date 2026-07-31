@@ -4,6 +4,8 @@ import { useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
+import { getApiBaseUrl } from "@/constants/oauth";
+import { captureException } from "@/lib/_core/sentry";
 
 export default function OnboardingScreen() {
   const router = useRouter();
@@ -20,10 +22,21 @@ export default function OnboardingScreen() {
 
     try {
       setIsLoading(true);
+      const apiBaseUrl = getApiBaseUrl();
+      console.log("[Onboarding] Register attempt", {
+        username: username.trim(),
+        publicId: publicId.trim(),
+        apiBaseUrl,
+      });
       await register(username.trim(), publicId.trim());
       router.replace("/(tabs)");
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "登録に失敗しました";
+      captureException(error, {
+        area: "onboarding.register",
+        username: username.trim(),
+        publicId: publicId.trim(),
+      });
       
       // EAS Build等でAPI Base URLが設定されていない場合のNetwork request failedを検知
       let detailedMessage = errorMessage;

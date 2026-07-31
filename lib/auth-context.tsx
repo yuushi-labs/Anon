@@ -17,6 +17,7 @@ import { useRouter } from "expo-router";
 import { disconnectWebSocket } from "./websocket";
 import { useQueryClient } from "@tanstack/react-query";
 import { setSessionToken, removeSessionToken } from "./_core/auth";
+import { captureException } from "./_core/sentry";
 
 export interface User {
   id: number;
@@ -108,6 +109,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await initializeNotifications();
       } catch (error) {
         console.error("Failed to initialize notifications:", error);
+        captureException(error, {
+          area: "auth.initializeNotifications",
+        });
       }
     };
 
@@ -207,6 +211,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Login failed";
+        captureException(error, {
+          area: "auth.login",
+          publicId,
+        });
         dispatch({ type: "SET_ERROR", payload: errorMessage });
         throw error;
       } finally {
@@ -237,6 +245,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error("Failed to initialize auth:", error);
+        captureException(error, {
+          area: "auth.initializeAuth",
+        });
         dispatch({ type: "SET_LOADING", payload: false });
       } finally {
       }
@@ -275,6 +286,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Registration failed";
+        captureException(error, {
+          area: "auth.register",
+          publicId,
+          username,
+        });
         // Rollback local keys if registration failed after saving them
         await CryptoLib.deleteKeys();
         dispatch({ type: "SET_ERROR", payload: errorMessage });
@@ -308,6 +324,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Logout failed";
+      captureException(error, {
+        area: "auth.logout",
+      });
       dispatch({ type: "SET_ERROR", payload: errorMessage });
       throw error;
     } finally {

@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 import type { AppRouter } from "@/server/routers";
 import { getApiBaseUrl } from "@/constants/oauth";
 import * as Auth from "@/lib/_core/auth";
+import { captureException } from "@/lib/_core/sentry";
 
 /**
  * IMPORTANT (tRPC v11): The `transformer` must be inside `httpBatchLink`,
@@ -24,6 +25,15 @@ export function createTRPCClient() {
         url: (() => {
           const baseUrl = getApiBaseUrl();
           if (Platform.OS !== "web" && !baseUrl) {
+            captureException(
+              new Error(
+                "[tRPC] EXPO_PUBLIC_API_BASE_URL is required for native tRPC requests.",
+              ),
+              {
+                area: "trpc",
+                baseUrl,
+              },
+            );
             throw new Error(
               "[tRPC] EXPO_PUBLIC_API_BASE_URL is required for native tRPC requests.",
             );

@@ -19,6 +19,8 @@ import type { EdgeInsets, Metrics, Rect } from "react-native-safe-area-context";
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-runtime";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { captureException, initSentry, isSentryEnabled } from "@/lib/_core/sentry";
+import { Pressable, Text, View } from "react-native";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -56,6 +58,50 @@ function AppContent() {
   );
 }
 
+type RootErrorBoundaryProps = {
+  error: Error;
+  retry: () => void;
+};
+
+export function ErrorBoundary({ error, retry }: RootErrorBoundaryProps) {
+  useEffect(() => {
+    captureException(error, {
+      location: "app/_layout",
+      sentryEnabled: isSentryEnabled(),
+    });
+  }, [error]);
+
+  return (
+    <View
+      style={{
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        backgroundColor: "#fff",
+      }}
+    >
+      <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: 12 }}>
+        アプリでエラーが発生しました
+      </Text>
+      <Text style={{ textAlign: "center", marginBottom: 20 }}>
+        {error.message}
+      </Text>
+      <Pressable
+        onPress={retry}
+        style={{
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          borderRadius: 10,
+          backgroundColor: "#111827",
+        }}
+      >
+        <Text style={{ color: "#fff", fontWeight: "600" }}>再試行</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export const unstable_settings = {
   anchor: "(tabs)",
 };
@@ -70,6 +116,10 @@ export default function RootLayout() {
   // Initialize Manus runtime for cookie injection from parent container
   useEffect(() => {
     initManusRuntime();
+  }, []);
+
+  useEffect(() => {
+    void initSentry();
   }, []);
 
   const handleSafeAreaUpdate = useCallback((metrics: Metrics) => {

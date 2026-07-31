@@ -8,6 +8,12 @@ const bundleId = "com.app.anonymousdmapp";
 const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
 const schemeFromBundleId = `manus${timestamp}`;
 
+const expoExtraApiBaseUrl =
+  (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ??
+  (Constants.manifest?.extra?.apiBaseUrl as string | undefined) ??
+  (Constants.manifest2?.extra?.apiBaseUrl as string | undefined) ??
+  "";
+
 const env = {
   portal: process.env.EXPO_PUBLIC_OAUTH_PORTAL_URL ?? "",
   server: process.env.EXPO_PUBLIC_OAUTH_SERVER_URL ?? "",
@@ -16,7 +22,7 @@ const env = {
   ownerName: process.env.EXPO_PUBLIC_OWNER_NAME ?? "",
   apiBaseUrl:
     process.env.EXPO_PUBLIC_API_BASE_URL ??
-    ((Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) || ""),
+    expoExtraApiBaseUrl,
   deepLinkScheme: schemeFromBundleId,
 };
 
@@ -33,6 +39,16 @@ export const API_BASE_URL = env.apiBaseUrl;
  * URL pattern: https://PORT-sandboxid.region.domain
  */
 export function getApiBaseUrl(): string {
+  const runtimeConfig = {
+    hasExpoEnv: Boolean(process.env.EXPO_PUBLIC_API_BASE_URL),
+    hasExtraConfig: Boolean(expoExtraApiBaseUrl),
+    apiBaseUrl: API_BASE_URL || "(empty)",
+    platform: ReactNative.Platform.OS,
+    isDev: __DEV__,
+  };
+
+  console.log("[API] Runtime config:", runtimeConfig);
+
   // On web, derive from current hostname dynamically.
   if (ReactNative.Platform.OS === "web") {
     if (typeof window !== "undefined" && window.location) {

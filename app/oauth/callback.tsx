@@ -1,6 +1,7 @@
 import { ThemedView } from "@/components/themed-view";
 import * as Api from "@/lib/_core/api";
 import * as Auth from "@/lib/_core/auth";
+import { captureException } from "@/lib/_core/sentry";
 import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -224,6 +225,12 @@ export default function OAuthCallback() {
         }
       } catch (error) {
         console.error("[OAuth] Callback error:", error);
+        captureException(error, {
+          area: "oauth.callback",
+          hasCode: Boolean(params.code),
+          hasState: Boolean(params.state),
+          hasSessionToken: Boolean(params.sessionToken),
+        });
         setStatus("error");
         setErrorMessage(
           error instanceof Error ? error.message : "Failed to complete authentication",
