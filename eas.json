@@ -14,7 +14,6 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "http://192.0.2.10:3000",
         "EXPO_PUBLIC_ENABLE_SENTRY": "true",
         "EXPO_PUBLIC_SENTRY_ENVIRONMENT": "preview"
       }

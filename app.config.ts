@@ -1,6 +1,12 @@
 // Load environment variables with proper priority (system > .env)
 import "./scripts/load-env.js";
 import type { ExpoConfig } from "expo/config";
+import { BUILD_CONFIG } from "./constants/build-config";
+
+// 優先順位: 環境変数 EXPO_PUBLIC_API_BASE_URL > constants/build-config.ts のハードコード値
+// EAS Buildでeas.jsonのenv設定を忘れていても、build-config.tsの値が必ず使われる。
+const resolvedApiBaseUrl =
+  process.env.EXPO_PUBLIC_API_BASE_URL || BUILD_CONFIG.apiBaseUrl;
 
 // Bundle ID format: space.manus.<project_name_dots>.<timestamp>
 // e.g., "my-app" created at 2024-01-15 10:30:45 -> "space.manus.my.app.t20240115103045"
@@ -71,7 +77,7 @@ const config: ExpoConfig = {
     permissions: ["POST_NOTIFICATIONS"],
     // Allow cleartext traffic only when necessary (local dev or non-HTTPS production).
     // Note: EAS Build (APK) will correctly evaluate this if the environment variable is present at build time.
-    usesCleartextTraffic: process.env.NODE_ENV === "development" || !!process.env.EXPO_PUBLIC_API_BASE_URL?.startsWith("http://"),
+    usesCleartextTraffic: process.env.NODE_ENV === "development" || resolvedApiBaseUrl.startsWith("http://"),
     intentFilters: [
       {
         action: "VIEW",
@@ -130,13 +136,21 @@ const config: ExpoConfig = {
         },
       },
     ],
+    [
+      "@sentry/react-native/expo",
+      {
+        organization: "yuushi",
+        project: "react-native",
+        // url: "https://sentry.io/" (セルフホストしていない場合はdefaultでOK)
+      },
+    ],
   ],
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
   },
   extra: {
-    apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "",
+    apiBaseUrl: resolvedApiBaseUrl,
     eas: {
       projectId: env.easProjectId,
     },

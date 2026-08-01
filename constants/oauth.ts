@@ -1,6 +1,7 @@
 import * as Linking from "expo-linking";
 import * as ReactNative from "react-native";
 import Constants from "expo-constants";
+import { BUILD_CONFIG } from "./build-config";
 
 // Extract scheme from bundle ID (last segment timestamp, prefixed with "manus")
 // e.g., "space.manus.my.app.t20240115103045" -> "manus20240115103045"
@@ -20,9 +21,12 @@ const env = {
   appId: process.env.EXPO_PUBLIC_APP_ID ?? "",
   ownerId: process.env.EXPO_PUBLIC_OWNER_OPEN_ID ?? "",
   ownerName: process.env.EXPO_PUBLIC_OWNER_NAME ?? "",
+  // 優先順位: 環境変数 > app.config.tsのextra(=結局はEXPO_PUBLIC_API_BASE_URLかBUILD_CONFIG) > BUILD_CONFIGの直接参照
+  // `||` を使うことで、空文字列("")の場合もフォールバックへ進むようにしている。
   apiBaseUrl:
-    process.env.EXPO_PUBLIC_API_BASE_URL ??
-    expoExtraApiBaseUrl,
+    process.env.EXPO_PUBLIC_API_BASE_URL ||
+    expoExtraApiBaseUrl ||
+    BUILD_CONFIG.apiBaseUrl,
   deepLinkScheme: schemeFromBundleId,
 };
 
