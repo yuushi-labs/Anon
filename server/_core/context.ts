@@ -3,7 +3,6 @@ import { appUsers, type AppUser, type User } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { verifyAppToken } from "./app-jwt";
-import { sdk } from "./sdk";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -15,7 +14,6 @@ export type TrpcContext = {
 export async function createContext(
   opts: CreateExpressContextOptions,
 ): Promise<TrpcContext> {
-  let user: User | null = null;
   let appUser: AppUser | null = null;
 
   const authHeader =
@@ -42,12 +40,16 @@ export async function createContext(
     }
   }
 
-  try {
-    user = await sdk.authenticateRequest(opts.req);
-  } catch (error) {
-    // Authentication is optional for public procedures.
-    user = null;
-  }
+  // 旧 Manus テンプレートの認証 (sdk.authenticateRequest) はこの app の
+  // JWT 形式 (userId/publicId) と互換性がなく、verifySession が
+  // "Session payload missing required fields" を返していた。
+  // 同じ Authorization ヘッダを読むため app の全リクエストで
+  // 警告が出続けていたが、app 自身の認証は上の verifyAppToken のみで
+  // 完結しており、この経路は一切成功しない。
+  // user はテンプレートの users テーブル (openId) を前提にした
+  // legacyAuth.me / adminProcedure 用のフィールドで、この app では
+  // 常に null のままになる。
+  const user: User | null = null;
 
   return {
     req: opts.req,
