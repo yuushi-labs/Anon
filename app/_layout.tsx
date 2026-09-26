@@ -30,6 +30,20 @@ import { Pressable, Text, View } from "react-native";
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
 
+/**
+ * 認証済みでなくても到達できるルート。
+ *
+ * - onboarding: 登録・ログイン画面そのもの。
+ * - dev: サーバー接続先の変更画面。接続先を変更できないと別のサーバーへ
+ *   ログインし直せないため、ここを止めると目的が達成できなくなります。
+ * - oauth: OAuth コールバック。sessionToken を受け取ってログインする入口なので、
+ *   必ず未ログイン時に到達できる必要があります。
+ */
+const UNAUTHENTICATED_ALLOWED_SEGMENTS = [
+  "onboarding",
+  "dev",
+  "oauth",
+] as const;
 
 function AppContent() {
   const { state: authState } = useAuth();
@@ -40,9 +54,12 @@ function AppContent() {
     if (authState.isLoading) return;
 
     const inOnboarding = segments[0] === "onboarding";
+    const reachableWithoutAuth = UNAUTHENTICATED_ALLOWED_SEGMENTS.some(
+      (segment) => segments[0] === segment,
+    );
 
     if (!authState.isSignedIn) {
-      if (!inOnboarding) {
+      if (!reachableWithoutAuth) {
         // Redirect to onboarding if not signed in
         router.replace("/onboarding");
       }
