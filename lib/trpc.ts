@@ -3,7 +3,7 @@ import { httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
 import { Platform } from "react-native";
 import type { AppRouter } from "@/server/routers";
-import { getApiBaseUrl } from "@/constants/oauth";
+import { resolveApiBaseUrl } from "@/lib/server-url";
 import * as Auth from "@/lib/_core/auth";
 import { captureException } from "@/lib/_core/sentry";
 
@@ -23,7 +23,7 @@ export function createTRPCClient() {
     links: [
       httpBatchLink({
         url: (() => {
-          const baseUrl = getApiBaseUrl();
+          const baseUrl = resolveApiBaseUrl();
           if (Platform.OS !== "web" && !baseUrl) {
             captureException(
               new Error(

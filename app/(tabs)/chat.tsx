@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { trpc } from "@/lib/trpc";
 import * as WebSocket from "@/lib/websocket";
 import * as CryptoLib from "@/lib/crypto";
-import { getApiBaseUrl } from "@/constants/oauth";
+import { resolveApiBaseUrl, subscribeServerUrl } from "@/lib/server-url";
 import { getSessionToken } from "@/lib/_core/auth";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
@@ -52,8 +52,26 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isSocketInitialized, setIsSocketInitialized] = useState(false);
+  const [wsUrl, setWsUrl] = useState("");
   const flatListRef = useRef<FlatList<Message>>(null);
   const submittedReadMessageIds = useRef(new Set<number>());
+
+  // Recompute the Socket.IO endpoint whenever the debug menu switches servers,
+  // so an open chat reconnects to the new host without an app restart.
+  useEffect(() => {
+    const updateWsUrl = () => {
+      try {
+        const apiBase = resolveApiBaseUrl();
+        setWsUrl(apiBase ? apiBase.replace(/^http/, "ws") : "");
+      } catch (error) {
+        console.error("[Chat] Failed to resolve WebSocket URL:", error);
+        setWsUrl("");
+      }
+    };
+
+    updateWsUrl();
+    return subscribeServerUrl(updateWsUrl);
+  }, []);
 
   const convId = Number.parseInt(conversationId || "0", 10);
   const getMessagesQuery = trpc.dm.getMessages.useQuery(
@@ -111,23 +129,27 @@ export default function ChatScreen() {
     const currentUser = authState.user;
     if (convId <= 0 || !currentUser) return;
 
+    if (!wsUrl) {
+      setIsSocketInitialized(false);
+      Alert.alert(
+        "接続設定エラー",
+        "APIサーバーの接続先が設定されていません。設定のサーバーURLを確認してください。",
+      );
+      return;
+    }
+
     let isActive = true;
     const setup = async () => {
       let token = "";
-      let wsUrl = "";
       try {
         token = (await getSessionToken()) || "";
-        const apiBase = getApiBaseUrl();
-        wsUrl = apiBase.replace(/^http/, "ws");
       } catch (error) {
-        console.error("[Chat] Failed to resolve WebSocket URL:", error);
+        console.error("[Chat] Failed to read session token:", error);
         if (isActive) {
           setIsSocketInitialized(false);
           Alert.alert(
             "接続設定エラー",
-            error instanceof Error
-              ? error.message
-              : "APIサーバーの接続先が設定されていません。",
+            error instanceof Error ? error.message : "認証情報を取得できませんでした。",
           );
         }
         return;
@@ -213,7 +235,7 @@ export default function ChatScreen() {
       setIsSocketInitialized(false);
       WebSocket.leaveConversation(convId);
     };
-  }, [authState.user, convId]);
+  }, [authState.user, convId, wsUrl]);
 
   const handleSendMessage = async () => {
     if (!inputText.trim() || !authState.user) return;

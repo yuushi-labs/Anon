@@ -8,14 +8,23 @@ import {
   Alert,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useThemeContext } from "@/lib/theme-provider";
 import { trpc } from "@/lib/trpc";
+import { BUILD_CONFIG } from "@/constants/build-config";
 
 const STORAGE_KEY_NOTIFICATIONS = "settings_notifications";
 const STORAGE_KEY_READ_RECEIPTS = "settings_read_receipts";
 
+/**
+ * 開発者ツールは開発ビルドでは常に、本番ビルドでは build-config.ts の
+ * showDebugTools が true のときだけ表示する。
+ */
+const showDebugTools = __DEV__ || BUILD_CONFIG.showDebugTools;
+
 export default function SettingsScreen() {
+  const router = useRouter();
   const { colorScheme, setColorScheme } = useThemeContext();
   const [notificationsEnabled, setNotificationsEnabledState] = useState(true);
   const [readReceipts, setReadReceiptsState] = useState(true);
@@ -275,6 +284,30 @@ export default function SettingsScreen() {
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* Developer tools */}
+          {showDebugTools && (
+            <View className="gap-3">
+              <Text className="text-sm font-semibold text-foreground">
+                開発者ツール
+              </Text>
+
+              <TouchableOpacity
+                onPress={() => router.push("/dev/server")}
+                className="bg-surface rounded-lg p-4 border border-border flex-row items-center justify-between"
+              >
+                <View className="flex-1">
+                  <Text className="text-base font-semibold text-foreground">
+                    サーバー接続先
+                  </Text>
+                  <Text className="text-xs text-muted mt-1">
+                    テスト用にAPIサーバーのURLを変更します
+                  </Text>
+                </View>
+                <Text className="text-lg text-muted">›</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Footer */}
           <View className="items-center py-4">

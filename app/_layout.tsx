@@ -20,6 +20,11 @@ import { trpc, createTRPCClient } from "@/lib/trpc";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-runtime";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { captureException, initSentry, isSentryEnabled } from "@/lib/_core/sentry";
+import {
+  loadServerUrlOverride,
+  subscribeServerUrl,
+} from "@/lib/server-url";
+import { disconnectWebSocket } from "@/lib/websocket";
 import { Pressable, Text, View } from "react-native";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
@@ -147,7 +152,41 @@ export default function RootLayout() {
         },
       }),
   );
-  const [trpcClient] = useState(() => createTRPCClient());
+  const [trpcClient, setTrpcClient] = useState(() => createTRPCClient());
+
+  // The server URL override must be loaded before the tRPC client is created,
+  // because the client captures the base URL at construction time.
+  const [isServerUrlReady, setIsServerUrlReady] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void loadServerUrlOverride()
+      .catch((error) => {
+        console.error("[App] Failed to load server URL override:", error);
+      })
+      .finally(() => {
+        if (isMounted) setIsServerUrlReady(true);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Rebuild the client when the debug menu switches servers so that subsequent
+  // requests go to the new host without an app restart.
+  useEffect(() => {
+    return subscribeServerUrl(() => {
+      console.log("[App] Server URL changed. Recreating tRPC client.");
+      queryClient.clear();
+      disconnectWebSocket();
+      // NOTE: Must wrap the client in a function. The tRPC client is a callable
+      // proxy (Proxy over a function), so passing it directly would make React
+      // treat it as a state updater and call it, storing undefined instead.
+      setTrpcClient(() => createTRPCClient());
+    });
+  }, [queryClient]);
 
   // Ensure minimum 8px padding for top and bottom on mobile
   const providerInitialMetrics = useMemo(() => {
@@ -161,6 +200,12 @@ export default function RootLayout() {
       },
     };
   }, [initialInsets, initialFrame]);
+
+  // Wait for the stored server URL so the first tRPC client is built with the
+  // right base URL. The native splash screen stays visible during this frame.
+  if (!isServerUrlReady) {
+    return null;
+  }
 
   const content = (
     <GestureHandlerRootView style={{ flex: 1 }}>

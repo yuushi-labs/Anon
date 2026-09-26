@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import { getApiBaseUrl } from "@/constants/oauth";
+import { resolveApiBaseUrl } from "@/lib/server-url";
 import * as Auth from "./auth";
 import { captureException } from "./sentry";
 
@@ -33,7 +33,7 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
     console.log("[API] apiCall:", { endpoint, platform: "web", method: options.method || "GET" });
   }
 
-  const baseUrl = getApiBaseUrl();
+  const baseUrl = resolveApiBaseUrl();
   // Ensure no double slashes between baseUrl and endpoint
   const cleanBaseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
@@ -171,7 +171,7 @@ export async function getMe(): Promise<{
 export async function establishSession(token: string): Promise<boolean> {
   try {
     console.log("[API] establishSession: setting cookie on backend...");
-    const baseUrl = getApiBaseUrl();
+    const baseUrl = resolveApiBaseUrl();
     const url = `${baseUrl}/api/auth/session`;
 
     const response = await fetch(url, {

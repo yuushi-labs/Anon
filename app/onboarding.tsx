@@ -1,11 +1,42 @@
 import { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert } from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  type AlertButton,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
-import { getApiBaseUrl } from "@/constants/oauth";
+import { BUILD_CONFIG } from "@/constants/build-config";
+import { getServerUrlOverride, resolveApiBaseUrl } from "@/lib/server-url";
 import { captureException } from "@/lib/_core/sentry";
+
+/**
+ * 開発者ツールは開発ビルドでは常に、本番ビルドでは build-config.ts の
+ * showDebugTools が true のときだけ表示する。
+ * 未ログイン時は設定画面へ到達できないため、登録画面にも導線を出す。
+ */
+const showDebugTools = __DEV__ || BUILD_CONFIG.showDebugTools;
+
+const NETWORK_ERROR_PATTERNS = ["Network request failed", "Failed to fetch"];
+
+function isNetworkError(message: string): boolean {
+  return NETWORK_ERROR_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+/** 表示用。接続先が解決できない場合はその旨を表示する。 */
+function safeApiBaseUrl(): string {
+  try {
+    return resolveApiBaseUrl();
+  } catch {
+    return "(未設定)";
+  }
+}
 
 export default function OnboardingScreen() {
   const router = useRouter();
@@ -22,7 +53,7 @@ export default function OnboardingScreen() {
 
     try {
       setIsLoading(true);
-      const apiBaseUrl = getApiBaseUrl();
+      const apiBaseUrl = resolveApiBaseUrl();
       console.log("[Onboarding] Register attempt", {
         username: username.trim(),
         publicId: publicId.trim(),
@@ -37,15 +68,38 @@ export default function OnboardingScreen() {
         username: username.trim(),
         publicId: publicId.trim(),
       });
-      
-      // EAS Build等でAPI Base URLが設定されていない場合のNetwork request failedを検知
-      let detailedMessage = errorMessage;
-      if (errorMessage.includes("Network request failed") || errorMessage.includes("Failed to fetch")) {
-         detailedMessage += "\n\n(デバッグ情報: EXPO_PUBLIC_API_BASE_URLが正しく設定されていない可能性があります。EAS Buildの環境変数設定を確認してください。)";
-         console.error("[Onboarding] Network Error detected. Check EXPO_PUBLIC_API_BASE_URL in eas.json or Expo dashboard.");
+
+      // 接続先に到達できない場合、サーバーURLを修正しない限り登録は成功しない。
+      // 設定画面はログイン後のみ到達可能なため、ここから直接編集できるようにする。
+      if (isNetworkError(errorMessage)) {
+        console.error(
+          "[Onboarding] Network error detected. Current base URL:",
+          safeApiBaseUrl(),
+        );
+
+        const buttons: AlertButton[] = showDebugTools
+          ? [
+              { text: "キャンセル", style: "cancel" },
+              {
+                text: "接続先を変更",
+                onPress: () => router.push("/dev/server"),
+              },
+              { text: "再試行", onPress: () => void handleRegister() },
+            ]
+          : [
+              { text: "キャンセル", style: "cancel" },
+              { text: "再試行", onPress: () => void handleRegister() },
+            ];
+
+        Alert.alert(
+          "サーバーに接続できません",
+          `${errorMessage}\n\n接続先が正しいか確認してください。\n現在: ${safeApiBaseUrl()}`,
+          buttons,
+        );
+        return;
       }
 
-      Alert.alert("登録エラー", detailedMessage);
+      Alert.alert("登録エラー", errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -129,6 +183,27 @@ export default function OnboardingScreen() {
               {isLoading ? "登録中..." : "登録する"}
             </Text>
           </TouchableOpacity>
+
+          {/* Server connection (developer tool) */}
+          {showDebugTools && (
+            <TouchableOpacity
+              onPress={() => router.push("/dev/server")}
+              disabled={isLoading}
+              className="mt-6 bg-surface rounded-lg p-4 border border-border flex-row items-center justify-between"
+            >
+              <View className="flex-1 mr-3">
+                <Text className="text-sm font-semibold text-foreground">
+                  サーバー接続先
+                </Text>
+                <Text className="text-xs text-muted mt-1" numberOfLines={1}>
+                  {getServerUrlOverride()
+                    ? getServerUrlOverride()
+                    : `${safeApiBaseUrl()}（既定値）`}
+                </Text>
+              </View>
+              <Text className="text-lg text-muted">›</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Info */}
           <View className="mt-8 bg-surface rounded-lg p-4">
