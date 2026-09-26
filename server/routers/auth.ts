@@ -3,7 +3,7 @@ import { publicProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { appUsers } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
-import { verifyRequestSignature } from "../_core/crypto";
+import { verifyRequestSignatureDetailed } from "../_core/crypto";
 import { TRPCError } from "@trpc/server";
 import { signAppToken, verifyAppToken } from "../_core/app-jwt";
 import { logger } from "../_core/logger";
@@ -56,7 +56,7 @@ export const authRouter = router({
 
         // Verify signature
         // The message signed by client is "publicId:timestamp[:nonce]"
-        const isValidSignature = verifyRequestSignature(
+        const verification = verifyRequestSignatureDetailed(
           input.publicId,
           input.signature,
           user.publicKey,
@@ -65,10 +65,28 @@ export const authRouter = router({
           5 * 60 * 1000, // 5 minute expiry
         );
 
-        if (!isValidSignature) {
+        if (!verification.valid) {
+          // 原因が分かるメッセージを返さないと、原因が_timestampずれでも
+          // 署名不一致でも同じ "Invalid signature" になり調査できない。
+          const skewSeconds =
+            typeof verification.skewMs === "number"
+              ? Math.round(Math.abs(verification.skewMs) / 1000)
+              : null;
+
+          const messageByReason: Record<string, string> = {
+            clock_skew: `端末の時刻がサーバーより${skewSeconds}秒進んでいます。設定の「日付と時刻を自動設定」をオンにしてください。`,
+            stale_timestamp: `端末の時刻がサーバーより${skewSeconds}秒遅れています。設定の「日付と時刻を自動設定」をオンにしてください。`,
+            nonce_reused:
+              "同じリクエストが再送されました。時間をおいて再度お試しください。",
+            bad_signature:
+              "署名の検証に失敗しました。時刻のずれまたは鍵の不整合を疑ってください。",
+          };
+
           throw new TRPCError({
             code: "UNAUTHORIZED",
-            message: "Invalid signature",
+            message:
+              messageByReason[verification.reason ?? "bad_signature"] ??
+              "Invalid signature",
           });
         }
 

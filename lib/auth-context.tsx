@@ -270,6 +270,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await CryptoLib.savePublicKey(publicKey);
         await CryptoLib.savePublicId(publicId);
 
+        // 書き込んだ秘密鍵を読み戻して一致するか確認する。
+        // SecureStoreの読み書きが壊れている場合、login時の署名検証で
+        // "署名の検証に失敗しました" となるだけで原因が分からないため、
+        // ここではストレージの読み書き自体を検出する。
+        const storedPrivateKey = await CryptoLib.getPrivateKey();
+        if (storedPrivateKey !== privateKey) {
+          throw new Error(
+            "秘密鍵を端末に保存できませんでした。アプリを再インストールしてから再度お試しください。",
+          );
+        }
+
         // Register with backend
         const result = await registerMutation.mutateAsync({
           username,

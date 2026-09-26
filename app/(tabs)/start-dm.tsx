@@ -10,8 +10,37 @@ import {
   Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
+import * as Linking from "expo-linking";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
+
+/**
+ * 会話用の共有リンクを生成する。
+ *
+ * ネイティブには window が存在しない（window 自体はあるが window.location が
+ * undefined になる）ため、ブラウザ用の window.location をそのまま使うと
+ * "Cannot read property 'origin' of undefined" で落ちる。
+ * ネイティブではアプリのカスタムスキームのディープリンクを生成する。
+ *
+ * なお (tabs) は expo-router のグループでURLには現れないため、
+ * パスは /chat になる。
+ */
+function buildConversationLink(conversationId: number): string {
+  const path = `/chat?conversationId=${conversationId}`;
+
+  if (Platform.OS === "web") {
+    const origin =
+      typeof window !== "undefined" ? window.location?.origin : undefined;
+    if (origin) return `${origin}${path}`;
+  }
+
+  try {
+    return Linking.createURL(path);
+  } catch (error) {
+    console.warn("[StartDM] Failed to build conversation link:", error);
+    return "";
+  }
+}
 
 /** テキストをクリップボードにコピーし、共有APIがあれば共有も試みる */
 async function shareOrCopy(message: string, link: string) {
@@ -57,9 +86,9 @@ export default function StartDMScreen() {
         recipientPublicId: targetPublicId.trim(),
       });
 
-      // Generate a shareable link for the conversation
-      const link = `${window.location.origin}/(tabs)/chat?conversationId=${result.conversationId}`;
-      setGeneratedLink(link);
+      // 会話はすでに作成済み。共有リンクの生成で失敗してもチャット画面へ
+      // 遷移できるように、リンク生成は例外を投げないヘルパー経由で行う。
+      setGeneratedLink(buildConversationLink(result.conversationId));
 
       // Navigate to chat screen using replace so the user doesn't go back to the start screen
       router.replace({
