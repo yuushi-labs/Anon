@@ -1,12 +1,25 @@
 // Load environment variables with proper priority (system > .env)
 import "./scripts/load-env.js";
 import type { ExpoConfig } from "expo/config";
-import { BUILD_CONFIG } from "./constants/build-config";
+// 拡張子 ".ts" を明示する理由: Expo は app.config.ts を CJS として require するため、
+// 拡張子なしの "./constants/build-config" は Node の CJS 解決では "./constants/build-config.js" 等を
+// 探して失敗し、`npx expo prebuild` / `expo start` が
+// "Cannot find module './constants/build-config'" で停止する。
+import { BUILD_CONFIG } from "./constants/build-config.ts";
 
 // 優先順位: 環境変数 EXPO_PUBLIC_API_BASE_URL > constants/build-config.ts のハードコード値
 // EAS Buildでeas.jsonのenv設定を忘れていても、build-config.tsの値が必ず使われる。
 const resolvedApiBaseUrl =
   process.env.EXPO_PUBLIC_API_BASE_URL || BUILD_CONFIG.apiBaseUrl;
+
+// 平文HTTPを許可するのはローカル開発とHTTPS未公開のときだけ。
+// Android 9 以降はデフォルトで平文通信をブロックするため、明示的に許可しないと
+// release ビルドでは API へ接続できず "Network request failed" になる。
+// 正しい注入先は expo-build-properties プラグインの android.usesCleartextTraffic
+// （app config の android 直下には schemas に存在しないキーなので無視される）。
+const usesCleartextTraffic =
+  process.env.NODE_ENV === "development" ||
+  resolvedApiBaseUrl.startsWith("http://");
 
 // Bundle ID format: space.manus.<project_name_dots>.<timestamp>
 // e.g., "my-app" created at 2024-01-15 10:30:45 -> "space.manus.my.app.t20240115103045"
@@ -75,9 +88,6 @@ const config: ExpoConfig = {
     softwareKeyboardLayoutMode: "resize",
     package: env.androidPackage,
     permissions: ["POST_NOTIFICATIONS"],
-    // Allow cleartext traffic only when necessary (local dev or non-HTTPS production).
-    // Note: EAS Build (APK) will correctly evaluate this if the environment variable is present at build time.
-    usesCleartextTraffic: process.env.NODE_ENV === "development" || resolvedApiBaseUrl.startsWith("http://"),
     intentFilters: [
       {
         action: "VIEW",
@@ -91,7 +101,7 @@ const config: ExpoConfig = {
         category: ["BROWSABLE", "DEFAULT"],
       },
     ],
-  } as NonNullable<ExpoConfig["android"]> & { usesCleartextTraffic: boolean },
+  },
   web: {
     bundler: "metro",
     output: "static",
@@ -133,6 +143,7 @@ const config: ExpoConfig = {
         android: {
           buildArchs: ["armeabi-v7a", "arm64-v8a"],
           minSdkVersion: 24,
+          usesCleartextTraffic,
         },
       },
     ],
