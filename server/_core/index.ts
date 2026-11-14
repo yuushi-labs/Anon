@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import { rateLimit } from "express-rate-limit";
+import helmet from "helmet";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
@@ -36,6 +37,8 @@ async function startServer() {
 
   const app = express();
   const server = createServer(app);
+
+  app.use(helmet());
 
   // Enable CORS for all routes - reflect the request origin to support credentials
   app.use((req, res, next) => {
