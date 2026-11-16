@@ -1,0 +1,171 @@
+name: Android Local Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - codex/p0
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      CI: true
+      EXPO_NO_TELEMETRY: 1
+      GRADLE_OPTS: >-
+        -Dorg.gradle.daemon=false
+        -Dorg.gradle.jvmargs=-Xmx4g
+        -Dorg.gradle.caching=true
+      # Sentryソースマップアップロード用。assembleRelease実行時にSentry Android Gradle Pluginが自動で使う。
+      # 未設定でもビルド自体は失敗しない（アップロードがスキップされるだけ）。
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+
+    steps:
+      - name: 🏗 Setup repo
+        uses: actions/checkout@v4
+
+      - name: 🏗 Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: 🏗 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 📦 Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: ♻️ Restore Android caches
+        uses: actions/cache@v4
+        with:
+          # NOTE: android/build と android/app/build はキャッシュしない。
+          # これらには node_modules 内の各ライブラリの codegen 出力を参照する
+          # 自動リンク設定(Android-autolinking.cmake 等)が含まれるが、
+          # node_modules 自体はキャッシュされず毎回再インストールされるため、
+          # 古いビルド出力を復元すると codegen 済みディレクトリが見つからず
+          # CMake 構成エラー(add_subdirectory given source ... not existing)
+          # の原因になる。
+          path: |
+            android/.gradle
+          key: ${{ runner.os }}-android-${{ hashFiles('pnpm-lock.yaml', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-android-
+
+      - name: 🔑 Create .env file
+        run: |
+          # EXPO_PUBLIC_API_BASE_URL は任意です。Secretで指定すればそちらが優先されますが、
+          # 未設定でも constants/build-config.ts のハードコード値が自動的に使われるため、
+          # ビルドを失敗させる必要はありません。
+          if [ -z "${EXPO_PUBLIC_API_BASE_URL}" ]; then
+            echo "ℹ️ EXPO_PUBLIC_API_BASE_URL secret is not set - using constants/build-config.ts fallback"
+          fi
+
+          if [ -z "${EXPO_PUBLIC_SENTRY_DSN}" ]; then
+            echo "EXPO_PUBLIC_SENTRY_DSN secret is not set" >&2
+            exit 1
+          fi
+
+          if [ -z "${SENTRY_AUTH_TOKEN}" ]; then
+            echo "⚠️ SENTRY_AUTH_TOKEN secret is not set - source map upload (スタックトレースの可読化) will be skipped"
+          fi
+
+          if [ -n "${EXPO_PUBLIC_API_BASE_URL}" ]; then
+            printf 'EXPO_PUBLIC_API_BASE_URL=%s\n' "${EXPO_PUBLIC_API_BASE_URL}" > .env
+            printf 'EXPO_PUBLIC_API_BASE_URL=%s\n' "${EXPO_PUBLIC_API_BASE_URL}" >> "$GITHUB_ENV"
+          else
+            : > .env
+          fi
+          printf 'EXPO_PUBLIC_ENABLE_SENTRY=true\n' >> .env
+          printf 'EXPO_PUBLIC_ENABLE_SENTRY=true\n' >> "$GITHUB_ENV"
+          printf 'EXPO_PUBLIC_SENTRY_ENVIRONMENT=preview\n' >> .env
+          printf 'EXPO_PUBLIC_SENTRY_ENVIRONMENT=preview\n' >> "$GITHUB_ENV"
+          printf 'EXPO_PUBLIC_SENTRY_DSN=%s\n' "${EXPO_PUBLIC_SENTRY_DSN}" >> .env
+          printf 'EXPO_PUBLIC_SENTRY_DSN=%s\n' "${EXPO_PUBLIC_SENTRY_DSN}" >> "$GITHUB_ENV"
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_API_BASE_URL }}
+          EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
+
+      - name: 🆙 Calculate Version
+        run: |
+          RUN_NUMBER=${{ github.run_number }}
+          MINOR=$(( RUN_NUMBER / 10 ))
+          PATCH=$(( RUN_NUMBER % 10 ))
+          VERSION_NAME="1.${MINOR}.${PATCH}"
+
+          echo "VERSION_CODE=$RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+
+          echo "Version: $VERSION_NAME"
+          echo "VersionCode: $RUN_NUMBER"
+
+      - name: ☕ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 🏗 Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 🧱 Prebuild Expo Android config
+        run: |
+          npx expo prebuild --platform android --clean --no-install
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_API_BASE_URL }}
+          EXPO_PUBLIC_ENABLE_SENTRY: "true"
+          EXPO_PUBLIC_SENTRY_ENVIRONMENT: preview
+          EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
+
+      - name: 🔍 Generate codegen artifacts (avoids CMake missing-jni race)
+        run: |
+          cd android
+          ./gradlew generateCodegenArtifactsFromSchema --build-cache
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_API_BASE_URL }}
+          EXPO_PUBLIC_ENABLE_SENTRY: "true"
+          EXPO_PUBLIC_SENTRY_ENVIRONMENT: preview
+          EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
+
+      - name: 🔑 Restore Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/keystore.jks
+
+      - name: 🚀 Build Preview APK
+        run: |
+          cd android
+
+          ./gradlew :app:assembleRelease \
+            --build-cache \
+            -x lintVitalRelease \
+            -PversionCode=${VERSION_CODE} \
+            -PversionName=${VERSION_NAME} \
+            -Pandroid.injected.signing.store.file=${{ github.workspace }}/android/app/keystore.jks \
+            -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD}}
+
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          EXPO_PUBLIC_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_API_BASE_URL }}
+          EXPO_PUBLIC_ENABLE_SENTRY: "true"
+          EXPO_PUBLIC_SENTRY_ENVIRONMENT: preview
+          EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
+
+      - name: 📤 Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
